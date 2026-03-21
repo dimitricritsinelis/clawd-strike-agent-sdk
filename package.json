@@ -1,0 +1,18 @@
+{
+  "name": "clawd-strike-agent-sdk",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.2",
+  "scripts": {
+    "smoke:no-context": "node examples/no-context-smoke.mjs",
+    "agent:baseline": "node examples/baseline-loop.mjs",
+    "agent:learn": "node examples/self-improving-runner.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dimitricritsinelis/clawd-strike-agent-sdk.git"
+  },
+  "devDependencies": {
+    "playwright": "^1.58.2"
+  }
+}
