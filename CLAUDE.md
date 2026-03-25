@@ -15,13 +15,21 @@ Use only the public Clawd Strike contract to enter Agent Mode, play repeated att
 7. Read `docs/TROUBLESHOOTING.md`.
 8. Run `pnpm contract:check`.
 
-## Run order
+## Stable run order
 
 1. `pnpm smoke:no-context`
 2. `pnpm agent:baseline`
 3. `pnpm agent:learn`
 
 Do not skip the smoke command on a fresh setup.
+
+## Phase order
+
+1. bootstrap
+2. baseline
+3. hit bootstrap
+4. kill bootstrap
+5. score optimization
 
 ## Required behavior
 
@@ -62,13 +70,20 @@ Locked by default:
 - change config and policy parameters first
 - compare candidates on batches, not single runs
 - promote only on evidence
-- use this comparison ladder:
-  1. more kill-positive episodes
-  2. more total kills
-  3. higher best score
-  4. higher median score
-  5. higher mean survival
-  6. higher accuracy with comparable shot volume
+- use the stage-aware ladder:
+  1. if champion has zero hits and zero kills:
+     - more hit-positive episodes
+     - more total hits
+     - then kills, score, survival, accuracy
+  2. if champion has hits but zero kills:
+     - more kill-positive episodes
+     - more total kills
+     - then hits, score, survival, accuracy
+  3. once baseline is met:
+     - kills
+     - score
+     - survival
+     - accuracy with comparable shot volume
 - update `MEMORY.md` often
 - curate `SELF_LEARNING.md` conservatively
 
@@ -76,9 +91,17 @@ Locked by default:
 
 - fresh browser profile resets local `best`
 - fresh filesystem destroys durable learning
+- case-only path drift passes locally on macOS and fails in CI
 - missing selectors or globals mean contract drift
 - missing output artifacts means the learning claim is invalid
-- repeated no-promotion batches usually mean stagnation, not success
+- repeated no-promotion zero-hit batches usually mean acquisition failure, not success
+
+## Escalation rule
+
+- config and memory first
+- if the first 5 completed attempts have zero hits, escalate to bounded acquisition changes in `src/policies/**`
+- do **not** respond to a zero-hit batch by only raising the attempt budget
+- runtime wrappers, public contract files, and fairness-boundary files stay locked unless a human explicitly asks for that level of change
 
 ## Stop conditions
 
@@ -88,6 +111,7 @@ Stop when any of these happens:
 - time budget reached
 - user stops the run
 - stagnation threshold hit
+- learning disabled
 - contract mismatch
 - fatal runtime error
 
@@ -99,7 +123,3 @@ A valid learning run must write:
 - `output/self-improving-runner/episodes.jsonl`
 - `output/self-improving-runner/latest-session-summary.json`
 - `output/self-improving-runner/candidate-summaries/*.json`
-
-## Escalation rule
-
-Do **not** edit runtime wrappers or the fairness boundary unless a human explicitly asks for that level of change. If config tuning stalls, escalate to `src/policies/**` before touching anything deeper.

@@ -6,6 +6,147 @@ import { clamp, createSeededRng, choose } from "../utils/random.mjs";
 
 export { createSeededRng };
 
+const SCORE_PHASE = "score-optimization";
+const KILL_PHASE = "kill-bootstrap";
+const HIT_PHASE = "hit-bootstrap";
+
+const PHASE_LADDERS = Object.freeze({
+  [HIT_PHASE]: [
+    ["episodesWithHit", 0],
+    ["totalShotsHit", 0],
+    ["episodesWithKill", 0],
+    ["totalKills", 0],
+    ["bestScore", 0],
+    ["meanSurvivalTimeS", 0.25]
+  ],
+  [KILL_PHASE]: [
+    ["episodesWithKill", 0],
+    ["totalKills", 0],
+    ["episodesWithHit", 0],
+    ["totalShotsHit", 0],
+    ["bestScore", 0],
+    ["medianScore", 0],
+    ["meanSurvivalTimeS", 0.25]
+  ],
+  [SCORE_PHASE]: [
+    ["episodesWithKill", 0],
+    ["totalKills", 0],
+    ["bestScore", 0],
+    ["medianScore", 0],
+    ["meanSurvivalTimeS", 0.25]
+  ]
+});
+
+const PARAMETER_FAMILIES = Object.freeze({
+  movement: [
+    ["forwardMove", 0.08],
+    ["strafeMagnitude", 0.06],
+    ["strafePeriodTicks", 6],
+    ["fireMoveScale", 0.12],
+    ["pauseEveryTicks", 14],
+    ["pauseDurationTicks", 2]
+  ],
+  scan: [
+    ["sweepAmplitudeDeg", 0.5],
+    ["sweepPeriodTicks", 8],
+    ["pitchSweepAmplitudeDeg", 0.4],
+    ["pitchSweepPeriodTicks", 10]
+  ],
+  acquisition: [
+    ["openingNoFireTicks", 2],
+    ["settleTicks", 2],
+    ["fireBurstLengthTicks", 2],
+    ["fireBurstCooldownTicks", 3],
+    ["engageHoldTicks", 3]
+  ],
+  reload: [
+    ["reloadThreshold", 2],
+    ["crouchEveryTicks", 20]
+  ],
+  recovery: [
+    ["panicTurnDeg", 2],
+    ["panicTicks", 3],
+    ["panicPitchNudgeDeg", 1],
+    ["damagePauseTicks", 2],
+    ["postScoreHoldTicks", 3]
+  ]
+});
+
+const TARGET_MODE_MUTATIONS = Object.freeze({
+  [HIT_PHASE]: {
+    familyNames: ["scan", "acquisition", "movement", "recovery"],
+    mutationCount: 2
+  },
+  [KILL_PHASE]: {
+    familyNames: ["acquisition", "movement", "recovery", "scan", "reload"],
+    mutationCount: 2
+  },
+  [SCORE_PHASE]: {
+    familyNames: ["movement", "reload", "acquisition", "recovery", "scan"],
+    mutationCount: 1
+  }
+});
+
+function mean(values) {
+  return values.length === 0
+    ? 0
+    : values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function median(values) {
+  if (values.length === 0) return 0;
+  const middle = Math.floor(values.length / 2);
+  return values.length % 2 === 1
+    ? values[middle]
+    : (values[middle - 1] + values[middle]) / 2;
+}
+
+function firstEpisodeIndexMatching(episodes, predicate) {
+  const index = episodes.findIndex(predicate);
+  return index >= 0 ? index + 1 : null;
+}
+
+function formatPhaseReason(phase, key, direction) {
+  return `candidate ${direction} ${key} during ${phase}`;
+}
+
+function compareAccuracy(candidate, champion, phase) {
+  const candidateAccuracy = Number(candidate?.meanAccuracy ?? 0);
+  const championAccuracy = Number(champion?.meanAccuracy ?? 0);
+  const candidateShots = Number(candidate?.totalShotsFired ?? 0);
+  const championShots = Number(champion?.totalShotsFired ?? 0);
+  const comparableFloor = Math.max(5, Math.round(championShots * 0.7));
+  const championComparableFloor = Math.max(5, Math.round(candidateShots * 0.7));
+
+  if (candidateAccuracy > championAccuracy + 0.03 && candidateShots >= comparableFloor) {
+    return {
+      promote: true,
+      phase,
+      reason: formatPhaseReason(phase, "meanAccuracy", "improved"),
+      key: "meanAccuracy",
+      delta: candidateAccuracy - championAccuracy
+    };
+  }
+
+  if (championAccuracy > candidateAccuracy + 0.03 && championShots >= championComparableFloor) {
+    return {
+      promote: false,
+      phase,
+      reason: formatPhaseReason(phase, "meanAccuracy", "regressed"),
+      key: "meanAccuracy",
+      delta: candidateAccuracy - championAccuracy
+    };
+  }
+
+  return null;
+}
+
+function jitterNumber(current, magnitude, rng, min, max, integer = false) {
+  const signed = (rng() * 2 - 1) * magnitude;
+  const next = clamp(current + signed, min, max);
+  return integer ? Math.round(next) : next;
+}
+
 export function defaultPolicy() {
   return normalizeAdaptiveSweeperPolicy(DEFAULT_ADAPTIVE_SWEEPER_POLICY);
 }
@@ -35,6 +176,7 @@ export function aggregateEpisodes(episodes) {
   const totalEpisodes = safeEpisodes.length;
   const totalKills = safeEpisodes.reduce((sum, episode) => sum + Number(episode.kills ?? 0), 0);
   const episodesWithKill = safeEpisodes.filter((episode) => Number(episode.kills ?? 0) > 0).length;
+  const episodesWithHit = safeEpisodes.filter((episode) => Number(episode.shotsHit ?? 0) > 0).length;
   const scores = safeEpisodes
     .map((episode) => Number(episode.finalScore ?? episode.lastRun ?? 0))
     .sort((left, right) => left - right);
@@ -44,27 +186,24 @@ export function aggregateEpisodes(episodes) {
   const accuracies = safeEpisodes
     .map((episode) => Number(episode.accuracy ?? 0))
     .filter((value) => Number.isFinite(value));
-
-  const mean = (values) => (
-    values.length === 0
-      ? 0
-      : values.reduce((sum, value) => sum + value, 0) / values.length
+  const firstHitEpisode = firstEpisodeIndexMatching(
+    safeEpisodes,
+    (episode) => Number(episode.shotsHit ?? 0) > 0
   );
-
-  const median = (values) => {
-    if (values.length === 0) return 0;
-    const middle = Math.floor(values.length / 2);
-    return values.length % 2 === 1
-      ? values[middle]
-      : (values[middle - 1] + values[middle]) / 2;
-  };
+  const firstKillEpisode = firstEpisodeIndexMatching(
+    safeEpisodes,
+    (episode) => Number(episode.kills ?? 0) > 0
+  );
 
   return {
     totalEpisodes,
     totalKills,
     episodesWithKill,
     episodesWithoutKill: totalEpisodes - episodesWithKill,
-    firstKillEpisode: safeEpisodes.findIndex((episode) => Number(episode.kills ?? 0) > 0) + 1 || null,
+    episodesWithHit,
+    episodesWithoutHit: totalEpisodes - episodesWithHit,
+    firstHitEpisode,
+    firstKillEpisode,
     bestScore: scores.length === 0 ? 0 : scores[scores.length - 1],
     medianScore: median(scores),
     meanScore: mean(scores),
@@ -72,29 +211,37 @@ export function aggregateEpisodes(episodes) {
     meanAccuracy: mean(accuracies),
     totalShotsFired: shotsFired,
     totalShotsHit: shotsHit,
-    baselineMet: totalEpisodes >= 5 && episodesWithKill >= 1
+    acquisitionMet: firstHitEpisode !== null && firstHitEpisode <= 5,
+    baselineMet: firstKillEpisode !== null && firstKillEpisode <= 5
   };
 }
 
+export function determineTargetMode(aggregate = {}) {
+  const totalHits = Number(aggregate?.totalShotsHit ?? 0);
+  const totalKills = Number(aggregate?.totalKills ?? 0);
+
+  if (totalHits <= 0 && totalKills <= 0) return HIT_PHASE;
+  if (totalKills <= 0) return KILL_PHASE;
+  return SCORE_PHASE;
+}
+
 export function compareBatchMetrics(candidate, champion, options = {}) {
+  const phase = options.targetMode ?? determineTargetMode(champion);
   const minScoreDelta = Number(options.minScoreDelta ?? 0);
+  const ladder = PHASE_LADDERS[phase] ?? PHASE_LADDERS[SCORE_PHASE];
 
-  const ladder = [
-    ["episodesWithKill", 0],
-    ["totalKills", 0],
-    ["bestScore", minScoreDelta],
-    ["medianScore", minScoreDelta],
-    ["meanSurvivalTimeS", 0.5]
-  ];
-
-  for (const [key, minDelta] of ladder) {
+  for (const [key, baseMinDelta] of ladder) {
+    const minDelta = key === "bestScore" || key === "medianScore"
+      ? Math.max(baseMinDelta, minScoreDelta)
+      : baseMinDelta;
     const candidateValue = Number(candidate?.[key] ?? 0);
     const championValue = Number(champion?.[key] ?? 0);
 
     if (candidateValue > championValue + minDelta) {
       return {
         promote: true,
-        reason: `candidate improved ${key}`,
+        phase,
+        reason: formatPhaseReason(phase, key, "improved"),
         key,
         delta: candidateValue - championValue
       };
@@ -103,30 +250,23 @@ export function compareBatchMetrics(candidate, champion, options = {}) {
     if (championValue > candidateValue + minDelta) {
       return {
         promote: false,
-        reason: `candidate regressed ${key}`,
+        phase,
+        reason: formatPhaseReason(phase, key, "regressed"),
         key,
         delta: candidateValue - championValue
       };
     }
   }
 
-  const candidateAccuracy = Number(candidate?.meanAccuracy ?? 0);
-  const championAccuracy = Number(champion?.meanAccuracy ?? 0);
-  const candidateShots = Number(candidate?.totalShotsFired ?? 0);
-  const championShots = Number(champion?.totalShotsFired ?? 0);
-
-  if (candidateAccuracy > championAccuracy + 0.03 && candidateShots >= championShots * 0.7) {
-    return {
-      promote: true,
-      reason: "candidate improved meanAccuracy with comparable shot volume",
-      key: "meanAccuracy",
-      delta: candidateAccuracy - championAccuracy
-    };
+  const accuracyDecision = compareAccuracy(candidate, champion, phase);
+  if (accuracyDecision) {
+    return accuracyDecision;
   }
 
   return {
     promote: false,
-    reason: "candidate did not beat champion on the comparison ladder",
+    phase,
+    reason: `candidate did not beat champion during ${phase}`,
     key: "tie",
     delta: 0
   };
@@ -134,61 +274,33 @@ export function compareBatchMetrics(candidate, champion, options = {}) {
 
 export const compareAggregates = compareBatchMetrics;
 
-const PARAMETER_FAMILIES = Object.freeze({
-  movement: [
-    ["strafeMagnitude", 0.06],
-    ["strafePeriodTicks", 6],
-    ["pauseEveryTicks", 14],
-    ["pauseDurationTicks", 2]
-  ],
-  sweep: [
-    ["sweepAmplitudeDeg", 0.5],
-    ["sweepPeriodTicks", 8]
-  ],
-  combat: [
-    ["fireBurstLengthTicks", 2],
-    ["fireBurstCooldownTicks", 2],
-    ["reloadThreshold", 2],
-    ["crouchEveryTicks", 20]
-  ],
-  panic: [
-    ["panicTurnDeg", 2],
-    ["panicTicks", 3],
-    ["postScoreHoldTicks", 3]
-  ]
-});
-
-function jitterNumber(current, magnitude, rng, min, max, integer = false) {
-  const signed = (rng() * 2 - 1) * magnitude;
-  const next = clamp(current + signed, min, max);
-  return integer ? Math.round(next) : next;
-}
-
 export function mutatePolicy(policy, options = {}) {
   const rng = options.rng ?? Math.random;
-  const targetMode = options.targetMode ?? "kill-bootstrap";
+  const targetMode = options.targetMode ?? HIT_PHASE;
   const explorationScale = clamp(Number(options.explorationScale ?? 1), 0.25, 3);
   const base = normalizeAdaptiveSweeperPolicy(policy);
   const next = { ...base };
 
-  const familyNames = targetMode === "kill-bootstrap"
-    ? ["movement", "sweep", "combat", "panic"]
-    : ["combat", "panic", "sweep", "movement"];
+  const strategy = TARGET_MODE_MUTATIONS[targetMode] ?? TARGET_MODE_MUTATIONS[HIT_PHASE];
 
-  const chosenFamily = choose(rng, familyNames);
-  const family = PARAMETER_FAMILIES[chosenFamily];
-  const mutationCount = targetMode === "kill-bootstrap" ? 2 : 1;
-
-  for (let index = 0; index < mutationCount; index += 1) {
+  for (let index = 0; index < strategy.mutationCount; index += 1) {
+    const chosenFamily = choose(rng, strategy.familyNames);
+    const family = PARAMETER_FAMILIES[chosenFamily];
     const [key, magnitude] = choose(rng, family);
     const scaledMagnitude = magnitude * explorationScale;
 
     switch (key) {
+      case "forwardMove":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0.2, 1, false);
+        break;
       case "strafeMagnitude":
-        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0.05, 0.6, false);
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0.05, 0.7, false);
         break;
       case "strafePeriodTicks":
         next[key] = jitterNumber(next[key], scaledMagnitude, rng, 4, 60, true);
+        break;
+      case "fireMoveScale":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0.15, 1, false);
         break;
       case "pauseEveryTicks":
         next[key] = rng() < 0.25 && next[key] > 0
@@ -204,10 +316,25 @@ export function mutatePolicy(policy, options = {}) {
       case "sweepPeriodTicks":
         next[key] = jitterNumber(next[key], scaledMagnitude, rng, 4, 80, true);
         break;
+      case "pitchSweepAmplitudeDeg":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0.1, 4, false);
+        break;
+      case "pitchSweepPeriodTicks":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 6, 80, true);
+        break;
+      case "openingNoFireTicks":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0, 12, true);
+        break;
+      case "settleTicks":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0, 12, true);
+        break;
       case "fireBurstLengthTicks":
-        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 1, 12, true);
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 1, 10, true);
         break;
       case "fireBurstCooldownTicks":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0, 24, true);
+        break;
+      case "engageHoldTicks":
         next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0, 20, true);
         break;
       case "reloadThreshold":
@@ -223,6 +350,12 @@ export function mutatePolicy(policy, options = {}) {
         break;
       case "panicTicks":
         next[key] = jitterNumber(next[key], scaledMagnitude, rng, 1, 24, true);
+        break;
+      case "panicPitchNudgeDeg":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0, 6, false);
+        break;
+      case "damagePauseTicks":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0, 12, true);
         break;
       case "postScoreHoldTicks":
         next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0, 30, true);
@@ -247,28 +380,43 @@ export function deriveSemanticNotes(previousPolicy, nextPolicy, previousAggregat
     if (text) notes.push(text);
   };
 
+  if (Number(nextAggregate?.episodesWithHit ?? 0) > Number(previousAggregate?.episodesWithHit ?? 0)) {
+    push("Promoted policy improved hit-positive batch count during hit bootstrap.");
+  }
+
+  if (Number(nextAggregate?.totalShotsHit ?? 0) > Number(previousAggregate?.totalShotsHit ?? 0)) {
+    push("Promoted policy increased total confirmed hits.");
+  }
+
   if (Number(nextAggregate?.episodesWithKill ?? 0) > Number(previousAggregate?.episodesWithKill ?? 0)) {
     push("Promoted policy improved kill-positive batch count.");
   }
 
-  if (Number(nextAggregate?.bestScore ?? 0) > Number(previousAggregate?.bestScore ?? 0)) {
-    push("Promoted policy improved best batch score.");
+  if (
+    Number(nextAggregate?.firstHitEpisode ?? Infinity)
+      < Number(previousAggregate?.firstHitEpisode ?? Infinity)
+  ) {
+    push("Promoted policy reached the first real hit earlier in the batch.");
   }
 
-  if (Number(nextPolicy.sweepPeriodTicks) < Number(previousPolicy.sweepPeriodTicks)) {
-    push("A shorter sweep period was part of the promoted candidate.");
+  if (Number(nextPolicy.pitchSweepAmplitudeDeg) > Number(previousPolicy.pitchSweepAmplitudeDeg)) {
+    push("A wider pitch sweep was part of the promoted candidate.");
   }
 
-  if (Number(nextPolicy.strafeMagnitude) > Number(previousPolicy.strafeMagnitude)) {
-    push("A wider strafe was part of the promoted candidate.");
+  if (Number(nextPolicy.settleTicks) > Number(previousPolicy.settleTicks)) {
+    push("A longer settle window was part of the promoted candidate.");
   }
 
-  if (Number(nextPolicy.reloadThreshold) < Number(previousPolicy.reloadThreshold)) {
-    push("A later reload threshold was part of the promoted candidate.");
+  if (Number(nextPolicy.fireBurstCooldownTicks) > Number(previousPolicy.fireBurstCooldownTicks)) {
+    push("A slower fire cadence was part of the promoted candidate.");
   }
 
-  if (Number(nextPolicy.panicTurnDeg) > Number(previousPolicy.panicTurnDeg)) {
-    push("A stronger panic turn was part of the promoted candidate.");
+  if (Number(nextPolicy.fireMoveScale) < Number(previousPolicy.fireMoveScale)) {
+    push("Reducing movement while firing was part of the promoted candidate.");
+  }
+
+  if (Number(nextPolicy.panicPitchNudgeDeg) > Number(previousPolicy.panicPitchNudgeDeg)) {
+    push("A stronger panic pitch nudge was part of the promoted candidate.");
   }
 
   return notes;
@@ -282,10 +430,16 @@ export function upsertHallOfFame(hallOfFame, entry, options = {}) {
   const next = [...withoutDuplicate, entry];
 
   next.sort((left, right) => {
-    const leftVsRight = compareBatchMetrics(left.aggregate ?? {}, right.aggregate ?? {}, { minScoreDelta: 0 });
+    const leftVsRight = compareBatchMetrics(left.aggregate ?? {}, right.aggregate ?? {}, {
+      minScoreDelta: 0,
+      targetMode: determineTargetMode(right.aggregate ?? {})
+    });
     if (leftVsRight.promote) return -1;
 
-    const rightVsLeft = compareBatchMetrics(right.aggregate ?? {}, left.aggregate ?? {}, { minScoreDelta: 0 });
+    const rightVsLeft = compareBatchMetrics(right.aggregate ?? {}, left.aggregate ?? {}, {
+      minScoreDelta: 0,
+      targetMode: determineTargetMode(left.aggregate ?? {})
+    });
     if (rightVsLeft.promote) return 1;
 
     return String(right.promotedAt ?? "").localeCompare(String(left.promotedAt ?? ""));
@@ -307,11 +461,18 @@ export function selectParentFromHallOfFame(hallOfFame, rng) {
 
 export function suggestNextExperiments(championEntry, stagnationCount = 0) {
   const aggregate = championEntry?.aggregate ?? {};
+  const targetMode = determineTargetMode(aggregate);
   const suggestions = [];
 
-  if (Number(aggregate.episodesWithKill ?? 0) === 0) {
-    suggestions.push("Tighten sweep timing and revisit strafe width to bootstrap the first kill.");
-    suggestions.push("Increase panic reaction strength after damage if deaths happen quickly.");
+  if (targetMode === HIT_PHASE) {
+    suggestions.push("Add or widen pitch sweep so the controller explores vertically during scan.");
+    suggestions.push("Reduce fire spam with longer settle or cooldown windows before probe bursts.");
+    suggestions.push("Consume feedback.recentEvents when present and hold briefly after enemy-hit.");
+    suggestions.push("Slow movement while firing so probe bursts happen during lower angular velocity.");
+  } else if (targetMode === KILL_PHASE) {
+    suggestions.push("Extend engage hold after enemy-hit so confirmed acquisition has time to convert into kills.");
+    suggestions.push("Tune settle ticks and fire-move slowdown to keep aim steadier after the first hit.");
+    suggestions.push("Revisit reload threshold only after engage windows produce cleaner follow-up damage.");
   } else {
     suggestions.push("Optimize score consistency before widening exploration further.");
     suggestions.push("Tune reload threshold and burst cadence only after movement remains stable.");
@@ -321,8 +482,8 @@ export function suggestNextExperiments(championEntry, stagnationCount = 0) {
     suggestions.push("Sample a hall-of-fame parent before widening the mutation surface.");
   }
 
-  if (Number(aggregate.meanAccuracy ?? 0) < 0.15) {
-    suggestions.push("Reduce wasted fire by shortening bursts or slowing sweep changes.");
+  if (Number(aggregate.meanAccuracy ?? 0) < 0.12) {
+    suggestions.push("Shorten fire windows or increase settle time if shot volume stays high without enough hits.");
   }
 
   return suggestions.slice(0, 4);

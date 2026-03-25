@@ -2,30 +2,45 @@
 
 This file defines the artifact contract for smoke, baseline, and learning runs.
 
-## Minimum durable learning artifacts
+## Required learning artifacts
 
-`pnpm agent:learn` must write at least:
+`pnpm agent:learn` must write:
 
 - `output/self-improving-runner/champion-policy.json`
 - `output/self-improving-runner/episodes.jsonl`
 - `output/self-improving-runner/latest-session-summary.json`
 - `output/self-improving-runner/candidate-summaries/*.json`
 
-If those files are missing, the run should not be described as durable self-improvement.
+If those paths are missing, the run is not durable self-improvement.
 
-## Recommended supporting artifacts
+## Supporting artifacts
 
-The starter also writes:
+The learner also tries to write:
 
 - `output/self-improving-runner/semantic-memory.json`
 - `output/self-improving-runner/hall-of-fame.json`
 - `output/self-improving-runner/scoreboard.json`
 - `output/self-improving-runner/resolved-run-config.json`
-
-The starter may also update:
-
 - `MEMORY.md`
 - `SELF_LEARNING.md`
+
+Supporting-artifact failures should be surfaced as warnings in `latest-session-summary.json` and stderr/console output. Required-artifact failures should fail the command.
+
+## Candidate summary ids
+
+Candidate summary filenames are padded and monotonic:
+
+- `0000.json`
+- `0001.json`
+- `0002.json`
+
+The next id is derived from durable on-disk state:
+
+- existing `candidate-summaries/*.json`
+- `champion-policy.json`
+- `hall-of-fame.json`
+
+Older summaries are never overwritten because of id reuse.
 
 ## Smoke outputs
 
@@ -45,19 +60,24 @@ The starter may also update:
 
 ## Candidate summary shape
 
-Each candidate summary should include:
+Each candidate summary includes:
 
-- candidate id and parent id
+- candidate id, label, and parent id
 - policy snapshot
 - aggregate metrics
 - champion aggregate at evaluation start
+- `evaluationKind`
+- `targetMode`
+- `acquisitionMet`
+- `baselineMet`
 - promote / reject decision
-- reason for the decision
 - generation timestamp
+
+Seed or champion backfill summaries may use a non-comparison `evaluationKind`, but they still reserve the durable candidate id and record the policy state honestly.
 
 ## Champion policy shape
 
-`champion-policy.json` should include:
+`champion-policy.json` includes:
 
 - policy id
 - label
@@ -68,22 +88,27 @@ Each candidate summary should include:
 
 ## Session summary shape
 
-`latest-session-summary.json` should include:
+`latest-session-summary.json` includes:
 
 - start time
 - finish time
 - stop reason
 - resolved run config metadata
-- baseline status
+- `acquisitionTarget`
+- `firstKillTarget`
+- `targetMode`
+- `acquisitionMet`
+- `baselineMet`
 - promotions
 - rejections
 - final champion
+- warnings for supportive-output failures
 - key lessons learned
 - next recommended experiments
 
 ## Episodes log shape
 
-Each line in `episodes.jsonl` should represent one completed death-to-death attempt and include:
+Each line in `episodes.jsonl` represents one completed death-to-death attempt and includes:
 
 - candidate id
 - candidate label
@@ -98,4 +123,18 @@ Each line in `episodes.jsonl` should represent one completed death-to-death atte
 - shots hit
 - accuracy
 - death cause
-- lastRun
+- last run score
+- `controllerTelemetry`
+
+## Controller telemetry fields
+
+When present, `controllerTelemetry` includes a small deterministic payload:
+
+- `feedbackAvailable`
+- `enemyHitEventsObserved`
+- `killEventsObserved`
+- `damageEventsObserved`
+- `ticksInEngageMode`
+- `ticksInPanicMode`
+- `estimatedPitchRangeDeg`
+- `lastMode`

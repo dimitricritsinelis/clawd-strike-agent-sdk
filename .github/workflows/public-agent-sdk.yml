@@ -24,7 +24,7 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --no-frozen-lockfile
-      - run: pnpm contract:check
+      - run: pnpm ci:check
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm smoke:no-context
         env:

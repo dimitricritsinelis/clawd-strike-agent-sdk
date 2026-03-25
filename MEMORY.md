@@ -2,14 +2,14 @@
 
 Short working memory for the current agent/session. This file is safe to overwrite often.
 
-<!-- GENERATED:START -->
+<!-- MEMORY_GENERATED:BEGIN -->
 ## Current best policy summary
 
 - No champion has been recorded yet.
 
 ## Active hypothesis
 
-- Bootstrap the first kill with bounded movement, sweep, reload, and panic-turn tuning.
+- Bootstrap the first hit with bounded pitch sweep, settle windows, and fire gating.
 
 ## Most recent useful lesson
 
@@ -21,15 +21,15 @@ Short working memory for the current agent/session. This file is safe to overwri
 
 ## Current experiment queue
 
-- Tighten sweep period slightly.
-- Widen or narrow strafe based on survivability.
-- Revisit reload threshold only after movement changes settle.
+- Widen or narrow pitch sweep based on hitless scans.
+- Revisit settle ticks before increasing shot volume.
+- Only tune reload timing after the first hit appears.
 
 ## Known constraints / known bugs
 
 - Durable learning requires both a persistent browser profile and a persistent workspace.
 - Only the public runtime contract may be used.
-<!-- GENERATED:END -->
+<!-- MEMORY_GENERATED:END -->
 
 ## Manual notes
 

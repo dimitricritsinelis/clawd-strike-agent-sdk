@@ -21,6 +21,24 @@ pnpm exec playwright install --with-deps chromium
 
 If your host cannot install system dependencies, try a local Chromium install and rerun.
 
+## Repo drift and path issues
+
+### `pnpm contract:check` passes locally but CI fails on files
+
+Case-only filename mismatches can appear to work on macOS and still fail in Linux CI.
+
+Check:
+
+- `docs/TROUBLESHOOTING.md` exists with that exact case
+- `docs/troubleshooting.md` does not exist
+- banned shadow files such as `README 2.md`, `package 2.json`, and `skills 2.md` are absent
+
+Then rerun:
+
+```bash
+pnpm contract:check
+```
+
 ## Browser launch issues
 
 ### Headless launch fails
@@ -40,27 +58,6 @@ Default:
 - `.agent-profile/`
 
 Do not use a fresh temporary browser context if you want browser-session persistence.
-
-## Headed vs headless issues
-
-### The game is visible but the agent never starts
-
-Check:
-
-- `BASE_URL` points at a live Clawd Strike deployment
-- `[data-testid="agent-mode"]`, `[data-testid="play"]`, and `[data-testid="agent-name"]` still exist
-- the agent name is valid and at most `15` characters
-- the runtime eventually reports `mode === "runtime"` and `runtimeReady === true`
-
-### The tab is hidden and progress stalls
-
-Use coarse stepping:
-
-```js
-await window.advanceTime(500);
-```
-
-Do not spam tiny hidden-tab frame steps.
 
 ## Missing selectors or globals
 
@@ -121,15 +118,30 @@ Check:
 - `MEMORY.md` and `SELF_LEARNING.md` are writable
 - the workspace is not read-only
 
+Memory-doc failures are supportive warnings. Required-output failures are fatal.
+
 ## The agent never gets a kill
 
-Try this order:
+Use this order.
 
-1. increase `ATTEMPT_BUDGET`
-2. slightly widen or narrow `strafeMagnitude`
-3. shorten `sweepPeriodTicks`
-4. increase `panicTurnDeg`
-5. inspect `episodes.jsonl` and `candidate-summaries/*.json` before editing code
+1. Inspect whether the agent got **any hits** in the first 5 completed attempts.
+2. If there were zero hits:
+   - do **not** just raise `ATTEMPT_BUDGET`
+   - move to policy-level acquisition fixes in `src/policies/**`
+   - verify pitch scan is active
+   - verify settle windows and fire cooldowns are reducing spam
+   - verify `feedback.recentEvents` is consumed when present
+3. If there were hits but zero kills:
+   - extend engage hold
+   - slow movement while firing
+   - inspect reload timing and panic recovery
+4. Only after that should you widen budgets or exploration scale.
+
+Inspect these artifacts before editing code:
+
+- `output/self-improving-runner/episodes.jsonl`
+- `output/self-improving-runner/candidate-summaries/*.json`
+- `output/self-improving-runner/latest-session-summary.json`
 
 ## Evaluation hangs
 
