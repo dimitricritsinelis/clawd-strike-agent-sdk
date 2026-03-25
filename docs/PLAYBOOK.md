@@ -1,138 +1,67 @@
 # Clawd Strike learning playbook
 
+Optional background doc. This is not part of the required reading order.
+
 ## Objective
 
 Make a contextless agent:
 
-1. enter Agent mode
+1. enter Agent Mode
 2. play repeated runs
 3. keep memory
 4. improve
-5. repeat
+5. repeat without widening the public contract
 
-## The minimal architecture
+## Minimal architecture
 
 Use four layers:
 
-1. **Public contract adapter**
-   - read state
-   - send actions
-   - detect death
-   - click play again
+1. public contract adapter
+2. bounded controller family
+3. durable memory artifacts
+4. batch optimizer
 
-2. **Parameterized controller**
-   - generic movement and firing policy
-   - small number of tunable values
-   - no hidden map assumptions
+## Stage order
 
-3. **External memory**
-   - `episodes.jsonl`
-   - `champion-policy.json`
-   - `semantic-memory.json`
-   - `hall-of-fame.json`
+1. hit bootstrap
+2. kill bootstrap
+3. score optimization
 
-4. **Optimizer**
-   - champion vs candidate
-   - batch evaluation
-   - promote only on evidence
+## Promotion stance
 
-## Why this beats ad hoc LLM self-editing
+Promote only on batch evidence.
 
-A contextless agent is bad at inventing a new game strategy from scratch every run. The public Clawd Strike contract is too sparse for that to be reliable.
+If the champion has zero hits and zero kills:
 
-A better pattern is:
+- prioritize hit-positive episodes
+- then total hits
+- then kills
+- then score and survival
 
-- keep one stable controller family
-- search its parameters
-- log outcomes
-- keep the champion
-- extract short semantic notes
+If the champion has hits but zero kills:
 
-## Bootstrap target
+- prioritize kill-positive episodes
+- then total kills
+- then hit consistency
+- then score and survival
 
-Before optimizing for score:
+Once the first-kill baseline is met:
 
-- require `>= 1` kill in `<= 5` completed attempts
+- optimize kills
+- optimize score
+- optimize survival
+- optimize accuracy with comparable shot volume
 
-Until this gate is crossed:
+## Persistence surfaces
 
-- prioritize movement sweep mutations
-- prioritize panic reactions after taking damage
-- do not overfit to accuracy
+Durable learning requires:
 
-## Promotion ladder
-
-Promote only when a candidate beats the champion on batch metrics.
-
-Order:
-
-1. more episodes with a kill
-2. more total kills
-3. higher best score
-4. higher median score
-5. higher mean score
-6. higher mean survival time
-7. higher mean accuracy with comparable shot volume
-
-## Required persistence surfaces
-
-### Browser profile
-
-Needed for browser-session `score.best`.
-
-Recommended default:
-
-- `.agent-profile/`
-
-### Filesystem artifacts
-
-Needed for durable memory.
-
-Recommended default:
-
-- `output/self-improving-runner/`
-
-If either surface is reset, the learning story degrades.
+- a persistent browser profile for browser-session `best`
+- a persistent workspace for `episodes.jsonl`, `champion-policy.json`, summaries, and semantic notes
 
 ## Anti-patterns
 
-- single-episode promotion
+- raising the attempt budget after a completely hitless batch and calling that learning
+- promoting a survival-only zero-hit candidate
 - full controller rewrites every attempt
-- chaotic random motion with no memory
-- closing the browser between champion and candidate evaluations
-- claiming learning without saved artifacts
-
-## What a user should still tune
-
-This starter intentionally leaves room for user control:
-
-- strafe width
-- sweep width
-- sweep period
-- fire burst cadence
-- reload threshold
-- panic turn
-- crouch cadence
-- evaluation batch size
-- exploration scale
-
-## What the game should expose and what it should not
-
-Safe to expose:
-
-- health
-- ammo
-- score
-- last-run summary
-- recent public-safe combat feedback such as damage taken, hit confirmed, kill, reload events, and wave complete
-
-Do **not** expose:
-
-- coordinates
-- enemy positions
-- landmarks
-- routes
-- LOS truth
-- seeds
-
-The goal is learning from consequences, not leaking hidden state.
+- treating hidden truth as fair game

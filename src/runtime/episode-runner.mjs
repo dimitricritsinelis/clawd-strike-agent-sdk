@@ -9,7 +9,7 @@ import {
   waitForRespawn
 } from "./browser.mjs";
 
-export function createEpisodeRecord(policyEntry, episodeIndex, observation) {
+export function createEpisodeRecord(policyEntry, episodeIndex, observation, controllerTelemetry = null) {
   const summary = observation?.lastRunSummary ?? {};
   const bestScore = Number(summary.bestScore ?? observation?.score?.best ?? 0);
   const finalScore = Number(summary.finalScore ?? observation?.score?.lastRun ?? 0);
@@ -31,7 +31,10 @@ export function createEpisodeRecord(policyEntry, episodeIndex, observation) {
     accuracy: Number(summary.accuracy ?? 0),
     deathCause: summary.deathCause ?? "unknown",
     lastRun: observation?.score?.lastRun ?? null,
-    localBestImproved: finalScore > 0 && finalScore >= bestScore
+    localBestImproved: finalScore > 0 && finalScore >= bestScore,
+    controllerTelemetry: controllerTelemetry && typeof controllerTelemetry === "object"
+      ? controllerTelemetry
+      : null
   };
 }
 
@@ -67,7 +70,13 @@ export async function runPolicyEpisodes(options) {
     }
 
     if (isDead(observation)) {
-      const episodeRecord = createEpisodeRecord(policyEntry, activeEpisodeIndex, observation);
+      const controllerTelemetry = controller.getTelemetry?.() ?? null;
+      const episodeRecord = createEpisodeRecord(
+        policyEntry,
+        activeEpisodeIndex,
+        observation,
+        controllerTelemetry
+      );
       episodes.push(episodeRecord);
 
       if (typeof onEpisodeRecorded === "function") {

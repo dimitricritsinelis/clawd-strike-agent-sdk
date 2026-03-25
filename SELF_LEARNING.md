@@ -2,7 +2,7 @@
 
 Curated durable lessons across runs. Keep this focused on heuristics that survived real batch comparison.
 
-<!-- GENERATED:START -->
+<!-- SELF_LEARNING_GENERATED:BEGIN -->
 ## Stable heuristics that work
 
 - No stable heuristics have been promoted yet.
@@ -18,18 +18,14 @@ Curated durable lessons across runs. Keep this focused on heuristics that surviv
 ## Experiments that improved performance
 
 - No promoted experiment patterns recorded yet.
-<!-- GENERATED:END -->
+<!-- SELF_LEARNING_GENERATED:END -->
 
 ## Promotion rules
 
 - Promote only on batch evidence.
-- Prefer:
-  1. more kill-positive episodes
-  2. more total kills
-  3. higher best score
-  4. higher median score
-  5. higher mean survival
-  6. higher accuracy with comparable shot volume
+- In hit bootstrap, prefer real hits over survival-only zero-hit behavior.
+- In kill bootstrap, prefer real kills over hit-only survival gains.
+- In score optimization, use the kill -> score -> survival -> accuracy ladder.
 
 ## Stagnation protocol
 

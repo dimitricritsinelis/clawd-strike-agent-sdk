@@ -1,8 +1,15 @@
 import path from "node:path";
 import { readTextIfExists, writeText } from "../utils/fs.mjs";
 
-const GENERATED_START = "<!-- GENERATED:START -->";
-const GENERATED_END = "<!-- GENERATED:END -->";
+const MEMORY_MARKERS = Object.freeze({
+  start: "<!-- MEMORY_GENERATED:BEGIN -->",
+  end: "<!-- MEMORY_GENERATED:END -->"
+});
+
+const SELF_LEARNING_MARKERS = Object.freeze({
+  start: "<!-- SELF_LEARNING_GENERATED:BEGIN -->",
+  end: "<!-- SELF_LEARNING_GENERATED:END -->"
+});
 
 function formatList(items, fallback = "- None yet.") {
   const safeItems = Array.isArray(items)
@@ -14,18 +21,40 @@ function formatList(items, fallback = "- None yet.") {
     : fallback;
 }
 
-function injectGeneratedBlock(existing, generatedBody, fallbackPrefix, fallbackSuffix = "") {
-  const block = `${GENERATED_START}\n${generatedBody.trim()}\n${GENERATED_END}`;
+function buildGeneratedBlock(markers, generatedBody) {
+  return `${markers.start}\n${generatedBody.trim()}\n${markers.end}`;
+}
+
+function insertGeneratedBlock(existing, block) {
+  const normalized = existing.endsWith("\n") ? existing : `${existing}\n`;
+  const firstDoubleNewline = normalized.indexOf("\n\n");
+
+  if (firstDoubleNewline === -1) {
+    return `${normalized}\n${block}\n`;
+  }
+
+  const prefix = normalized.slice(0, firstDoubleNewline + 2);
+  const suffix = normalized.slice(firstDoubleNewline + 2).replace(/^\s*/, "");
+  const next = `${prefix}${block}\n\n${suffix}`;
+  return next.endsWith("\n") ? next : `${next}\n`;
+}
+
+function injectGeneratedBlock(existing, generatedBody, markers, fallbackPrefix, fallbackSuffix = "") {
+  const block = buildGeneratedBlock(markers, generatedBody);
 
   if (
     typeof existing === "string"
-    && existing.includes(GENERATED_START)
-    && existing.includes(GENERATED_END)
+    && existing.includes(markers.start)
+    && existing.includes(markers.end)
   ) {
-    const startIndex = existing.indexOf(GENERATED_START);
-    const endIndex = existing.indexOf(GENERATED_END) + GENERATED_END.length;
+    const startIndex = existing.indexOf(markers.start);
+    const endIndex = existing.indexOf(markers.end) + markers.end.length;
     const next = `${existing.slice(0, startIndex)}${block}${existing.slice(endIndex)}`;
     return next.endsWith("\n") ? next : `${next}\n`;
+  }
+
+  if (typeof existing === "string" && existing.trim().length > 0) {
+    return insertGeneratedBlock(existing, block);
   }
 
   const assembled = `${fallbackPrefix}${block}${fallbackSuffix}`;
@@ -44,6 +73,18 @@ function summarizeRejectionPatterns(rejections) {
     .sort((left, right) => right[1] - left[1])
     .slice(0, 5)
     .map(([reason, count]) => `${reason} (${count})`);
+}
+
+function deriveActiveHypothesis(sessionSummary) {
+  if (sessionSummary?.baselineMet) {
+    return "Optimize score consistency without widening the fairness surface.";
+  }
+
+  if (sessionSummary?.acquisitionMet) {
+    return "Convert first-hit acquisition into a repeatable first-kill batch.";
+  }
+
+  return "Bootstrap the first hit with bounded pitch sweep, settle windows, and fire gating.";
 }
 
 export async function writeLearningMemoryDocs(projectRoot, payload) {
@@ -67,10 +108,11 @@ export async function writeLearningMemoryDocs(projectRoot, payload) {
     ? [
         `id: \`${championEntry.id}\``,
         `label: \`${championEntry.label}\``,
+        `hit-positive episodes: \`${championEntry.aggregate.episodesWithHit}\``,
         `kill-positive episodes: \`${championEntry.aggregate.episodesWithKill}\``,
+        `total hits: \`${championEntry.aggregate.totalShotsHit}\``,
         `total kills: \`${championEntry.aggregate.totalKills}\``,
         `best score: \`${championEntry.aggregate.bestScore}\``,
-        `median score: \`${championEntry.aggregate.medianScore}\``,
         `mean survival: \`${championEntry.aggregate.meanSurvivalTimeS}\``
       ]
     : ["No champion has been recorded yet."];
@@ -87,16 +129,12 @@ export async function writeLearningMemoryDocs(projectRoot, payload) {
       ]
     : ["No run config has been written yet."];
 
-  const activeHypothesis = sessionSummary?.baselineMet
-    ? "Optimize score consistency without widening the fairness surface."
-    : "Bootstrap the first kill through bounded movement, sweep, and panic-turn tuning.";
-
   const memoryGenerated = [
     "## Current best policy summary",
     formatList(championSummary),
     "",
     "## Active hypothesis",
-    `- ${activeHypothesis}`,
+    `- ${deriveActiveHypothesis(sessionSummary)}`,
     "",
     "## Most recent useful lesson",
     latestLesson ? `- ${latestLesson}` : "- No lesson has been promoted yet.",
@@ -120,7 +158,13 @@ export async function writeLearningMemoryDocs(projectRoot, payload) {
   const memoryFallbackSuffix = "\n\n## Manual notes\n\n- Add temporary user steering or session notes here.\n- Keep this section short.\n";
   await writeText(
     memoryPath,
-    injectGeneratedBlock(existingMemory, memoryGenerated, memoryFallbackPrefix, memoryFallbackSuffix)
+    injectGeneratedBlock(
+      existingMemory,
+      memoryGenerated,
+      MEMORY_MARKERS,
+      memoryFallbackPrefix,
+      memoryFallbackSuffix
+    )
   );
 
   const stableHeuristics = (semanticMemory?.notes ?? []).slice(-8).map((entry) => entry.text);
@@ -142,12 +186,13 @@ export async function writeLearningMemoryDocs(projectRoot, payload) {
 
   const existingSelfLearning = await readTextIfExists(selfLearningPath, null);
   const selfLearningFallbackPrefix = "# SELF_LEARNING.md\n\nCurated durable lessons across runs. Keep this focused on heuristics that survived real batch comparison.\n\n";
-  const selfLearningFallbackSuffix = "\n\n## Promotion rules\n\n- Promote only on batch evidence.\n- Prefer:\n  1. more kill-positive episodes\n  2. more total kills\n  3. higher best score\n  4. higher median score\n  5. higher mean survival\n  6. higher accuracy with comparable shot volume\n\n## Stagnation protocol\n\n- If repeated batches fail to promote, widen mutation scale modestly.\n- Try a hall-of-fame parent before changing controller family.\n- Escalate from config edits to policy-code edits only after bounded config search stalls.\n\n## Escalation rule\n\n- Config and memory first.\n- `src/policies/**` second.\n- Runtime wrappers and contract files only with explicit human review.\n";
+  const selfLearningFallbackSuffix = "\n\n## Promotion rules\n\n- Promote only on batch evidence.\n- In hit bootstrap, prefer real hits over survival-only zero-hit behavior.\n- In kill bootstrap, prefer real kills over hit-only survival gains.\n- In score optimization, use the kill -> score -> survival -> accuracy ladder.\n\n## Stagnation protocol\n\n- If repeated batches fail to promote, widen mutation scale modestly.\n- Try a hall-of-fame parent before changing controller family.\n- Escalate from config edits to policy-code edits only after bounded config search stalls.\n\n## Escalation rule\n\n- Config and memory first.\n- `src/policies/**` second.\n- Runtime wrappers and contract files only with explicit human review.\n";
   await writeText(
     selfLearningPath,
     injectGeneratedBlock(
       existingSelfLearning,
       selfLearningGenerated,
+      SELF_LEARNING_MARKERS,
       selfLearningFallbackPrefix,
       selfLearningFallbackSuffix
     )
