@@ -1,120 +1,183 @@
 # Clawd Strike Agent SDK
 
-Starter kit, examples, and a concrete self-improving loop for browser agents playing Clawd Strike through the public `/skills.md` contract.
+Starter kit for browser agents that must bootstrap from public context only, enter Agent Mode, play repeated attempts, learn between attempts, and retry.
 
-This repo is intentionally separate from the game repository.
+The default controller is intentionally simple. It is designed to get a contextless agent from zero to a real learning loop without exposing hidden game truth or becoming obviously overpowered.
 
-## What this repo is for
-
-- bootstrapping a contextless agent into Agent mode
-- running a public-contract smoke test
-- running a deterministic baseline
-- running a persistent self-improving controller that keeps local memory across attempts
-
-## What this repo is **not**
-
-- hidden map truth
-- enemy coordinates
-- routes, landmarks, seeds, or debug state
-- a superhuman aimbot
-
-The controller here is deliberately generic. It can bootstrap from nothing, learn from outcomes, and improve, but it still has to search.
-
-## Quick start
+## Quickstart
 
 ```bash
 pnpm install
 pnpm exec playwright install --with-deps chromium
+pnpm contract:check
 pnpm smoke:no-context
 pnpm agent:baseline
 pnpm agent:learn
 ```
 
-## Recommended default run
+## What this repo guarantees
+
+- a fixed reading order for contextless agents
+- stable starter commands:
+  - `pnpm smoke:no-context`
+  - `pnpm agent:baseline`
+  - `pnpm agent:learn`
+- disk-backed outputs for cross-attempt learning
+- a bounded, data-first tuning surface
+- a strict fairness boundary around public state only
+
+## Required reading order
+
+1. `AGENTS.md` or `CLAUDE.md`
+2. `docs/PUBLIC_CONTRACT.md`
+3. `MEMORY.md`
+4. `SELF_LEARNING.md`
+5. `docs/OUTPUTS.md`
+6. `docs/POLICY_SCHEMA.md`
+7. `docs/TROUBLESHOOTING.md`
+
+`AGENTS.md` and `CLAUDE.md` are intentionally identical.
+
+## Command matrix
+
+| Command | Purpose | Main outputs |
+| --- | --- | --- |
+| `pnpm contract:check` | Validate that the repo surface matches the documented command/file/output contract | Console report |
+| `pnpm smoke:no-context` | Prove a blank agent can launch, observe, die, and retry using only the public surface | `output/no-context-smoke/<timestamp>/` |
+| `pnpm agent:baseline` | Run one baseline attempt with the default policy and record the result | `output/baseline/` |
+| `pnpm agent:learn` | Run the repeat -> summarize -> improve -> retry loop with persistent disk artifacts | `output/self-improving-runner/` |
+
+## Run configuration
+
+Default config lives in `config/learning.config.json`.
+
+Required fields:
+
+- `agentName`
+- `modelProvider`
+- `modelName`
+- `headless`
+- `attemptBudget` or `timeBudgetMinutes`
+- `learningEnabled`
+
+Optional fields:
+
+- `userNotes`
+- `watchMode`
+
+Environment variables override config file values. The resolved config is written to `output/self-improving-runner/resolved-run-config.json`.
+
+### Example run
 
 ```bash
 HEADLESS=false \
 AGENT_NAME=ClawdLearner \
-BASELINE_DEATHS=5 \
-CANDIDATE_DEATHS=5 \
-MAX_CANDIDATES=50 \
-STAGNATION_LIMIT=8 \
-MIN_SCORE_DELTA=0 \
+MODEL_PROVIDER=metadata-only \
+MODEL_NAME=adaptive-sweeper \
+ATTEMPT_BUDGET=30 \
+TIME_BUDGET_MINUTES=15 \
 pnpm agent:learn
 ```
 
-## Output artifacts
+In this starter, `modelProvider` and `modelName` are metadata fields. They exist so agents and users can record what higher-level planner or host model was used around the public controller loop.
 
-`pnpm agent:learn` writes to `output/self-improving-runner/` by default:
+## Safe edit surface
 
-- `champion-policy.json`
-  - current best policy and the aggregate metrics that justified promotion
-- `episodes.jsonl`
-  - append-only episodic memory
-- `semantic-memory.json`
-  - short durable notes extracted from promotions
-- `hall-of-fame.json`
-  - top recent promoted policies
-- `latest-session-summary.json`
-  - the final session summary
-- `candidate-summaries/*.json`
-  - one file per evaluated candidate
+Safe by default:
 
-## Why this layout works better than the old starter
+- `MEMORY.md`
+- `SELF_LEARNING.md`
+- `config/*.json`
+- `output/**`
 
-The old public starter only had a smoke script and a static baseline loop. That is enough to prove the contract exists, but not enough to produce durable attempt-to-attempt improvement.
+Allowed with caution:
 
-This repo adds the missing pieces:
+- `src/policies/**`
 
-- a persistent browser profile so browser-session `best` survives across evaluations
-- a writable external memory surface for episode logs and champion state
-- a batch comparison rule so promotion decisions are not based on single noisy runs
-- a parameterized controller so learning is a real search problem instead of arbitrary code churn
+Locked by default:
 
-## Minimum intelligence target
+- `src/runtime/**`
+- `skills.md`
+- `docs/PUBLIC_CONTRACT.md`
+- `sdk.contract.json`
+- `scripts/validate-sdk-contract.mjs`
 
-The first gate is:
+## Durable learning outputs
 
-- at least `1` kill within `5` completed attempts
+Required learning artifacts:
 
-The learning loop optimizes for that first. After it crosses the gate, it shifts toward better kill consistency and score.
+- `output/self-improving-runner/champion-policy.json`
+- `output/self-improving-runner/episodes.jsonl`
+- `output/self-improving-runner/latest-session-summary.json`
+- `output/self-improving-runner/candidate-summaries/*.json`
 
-## Tuning knobs
+Recommended supporting artifacts:
 
-- `BASELINE_DEATHS`
-- `CANDIDATE_DEATHS`
-- `MAX_CANDIDATES`
-- `STAGNATION_LIMIT`
-- `MIN_SCORE_DELTA`
-- `STEP_MS`
-- `MAX_STEPS_PER_EPISODE`
-- `USER_DATA_DIR`
-- `OUTPUT_DIR`
+- `output/self-improving-runner/semantic-memory.json`
+- `output/self-improving-runner/hall-of-fame.json`
+- `output/self-improving-runner/scoreboard.json`
+- `MEMORY.md`
+- `SELF_LEARNING.md`
 
-## Practical limitations
+If those first four files do not exist after `pnpm agent:learn`, the run should not be described as durable self-improvement.
 
-True cross-attempt learning requires both:
-
-- a persistent browser profile directory
-- a writable filesystem that survives for the duration of the run, and ideally across reruns
-
-If your agent platform starts with a fresh browser profile and a fresh workspace every time, you do **not** have durable self-learning, even if the agent says it is learning.
-
-## Repository layout
+## Repo map
 
 - `skills.md`
-  - mirror of the proposed public contract
-- `src/`
-  - Playwright helpers, policy code, learning code
-- `examples/no-context-smoke.mjs`
-  - public contract smoke test
-- `examples/baseline-loop.mjs`
-  - deterministic non-learning baseline
-- `examples/self-improving-runner.mjs`
-  - champion-challenger learning loop
-- `docs/PLAYBOOK.md`
-  - operational playbook
-- `docs/TUNING_GUIDE.md`
-  - parameter and acceptance guidance
-- `docs/troubleshooting.md`
-  - common failure modes
+  - mirror of the canonical game contract
+- `AGENTS.md`, `CLAUDE.md`
+  - procedural instructions for contextless agents
+- `MEMORY.md`
+  - short working memory for the current session
+- `SELF_LEARNING.md`
+  - curated durable lessons
+- `config/`
+  - safe default tuning surface
+- `docs/`
+  - public contract, outputs, policy schema, troubleshooting
+- `examples/`
+  - runnable smoke, baseline, and learn entrypoints
+- `src/runtime/`
+  - stable browser/game interaction wrappers
+- `src/policies/`
+  - policy behavior modules
+- `src/learn/`
+  - comparison, mutation, storage, memory-doc helpers
+- `src/utils/`
+  - filesystem and RNG helpers
+- `scripts/`
+  - local validation for command/file/output drift
+
+## Product stance
+
+This SDK is meant to let an agent:
+
+- get into the game
+- learn quickly enough to plausibly reach at least one kill within five attempts
+- keep improving across attempts
+- still leave meaningful room for a user or stronger agent to steer the policy further
+
+It is not meant to be an omniscient bot or a hidden-state exploit surface.
+
+## Fairness boundary
+
+Use only the public contract:
+
+- public selectors
+- public globals
+- public state
+- public retry flow
+
+Do **not** use:
+
+- coordinates
+- enemy positions
+- routes
+- seeds
+- hidden debug truth
+
+The goal is learning from limited public feedback.
+
+## CI stance
+
+`pnpm contract:check` plus the included GitHub Action are the local SDK side of drift prevention. The game-side `/skills.md` is still the authoritative source of truth.

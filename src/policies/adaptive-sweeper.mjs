@@ -34,6 +34,7 @@ export const DEFAULT_ADAPTIVE_SWEEPER_POLICY = Object.freeze({
 
 export function normalizeAdaptiveSweeperPolicy(policy = {}) {
   const source = { ...DEFAULT_ADAPTIVE_SWEEPER_POLICY, ...policy };
+
   return {
     family: "adaptive-sweeper",
     version: 1,
@@ -88,11 +89,7 @@ export function createAdaptiveSweeperController(policy) {
     const reserve = Number(state?.ammo?.reserve ?? 0);
     const reloading = state?.ammo?.reloading === true;
 
-    if (
-      health !== null
-      && memory.lastHealth !== null
-      && health < memory.lastHealth
-    ) {
+    if (health !== null && memory.lastHealth !== null && health < memory.lastHealth) {
       memory.panicRemaining = p.panicTicks;
       if (p.reverseOnDamage) {
         memory.strafeSign *= -1;
@@ -108,6 +105,7 @@ export function createAdaptiveSweeperController(policy) {
     }
 
     const sweepDirection = Math.floor(memory.tickIndex / p.sweepPeriodTicks) % 2 === 0 ? 1 : -1;
+
     let moveX = p.strafeMagnitude * memory.strafeSign;
     let moveZ = p.forwardMove;
     let lookYawDelta = p.sweepAmplitudeDeg * sweepDirection;

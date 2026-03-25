@@ -2,24 +2,32 @@ import {
   DEFAULT_ADAPTIVE_SWEEPER_POLICY,
   normalizeAdaptiveSweeperPolicy
 } from "../policies/adaptive-sweeper.mjs";
+import { clamp, createSeededRng, choose } from "../utils/random.mjs";
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-export function createSeededRng(seed = Date.now()) {
-  let state = Number(seed) || 1;
-  return () => {
-    state ^= state << 13;
-    state ^= state >> 17;
-    state ^= state << 5;
-    const normalized = ((state >>> 0) % 1_000_000) / 1_000_000;
-    return normalized;
-  };
-}
+export { createSeededRng };
 
 export function defaultPolicy() {
   return normalizeAdaptiveSweeperPolicy(DEFAULT_ADAPTIVE_SWEEPER_POLICY);
+}
+
+export function createCandidatePolicyRecord(options = {}) {
+  const {
+    id = 0,
+    label = "candidate",
+    parentId = null,
+    policy = DEFAULT_ADAPTIVE_SWEEPER_POLICY,
+    promotedAt = null
+  } = options;
+
+  return {
+    id,
+    label,
+    parentId,
+    promotedAt,
+    policy: normalizeAdaptiveSweeperPolicy(policy),
+    aggregate: null,
+    episodes: []
+  };
 }
 
 export function aggregateEpisodes(episodes) {
@@ -27,20 +35,28 @@ export function aggregateEpisodes(episodes) {
   const totalEpisodes = safeEpisodes.length;
   const totalKills = safeEpisodes.reduce((sum, episode) => sum + Number(episode.kills ?? 0), 0);
   const episodesWithKill = safeEpisodes.filter((episode) => Number(episode.kills ?? 0) > 0).length;
-  const scores = safeEpisodes.map((episode) => Number(episode.finalScore ?? episode.lastRun ?? 0)).sort((a, b) => a - b);
+  const scores = safeEpisodes
+    .map((episode) => Number(episode.finalScore ?? episode.lastRun ?? 0))
+    .sort((left, right) => left - right);
   const survivals = safeEpisodes.map((episode) => Number(episode.survivalTimeS ?? 0));
+  const shotsFired = safeEpisodes.reduce((sum, episode) => sum + Number(episode.shotsFired ?? 0), 0);
+  const shotsHit = safeEpisodes.reduce((sum, episode) => sum + Number(episode.shotsHit ?? 0), 0);
   const accuracies = safeEpisodes
     .map((episode) => Number(episode.accuracy ?? 0))
     .filter((value) => Number.isFinite(value));
-  const shotsFired = safeEpisodes.reduce((sum, episode) => sum + Number(episode.shotsFired ?? 0), 0);
-  const shotsHit = safeEpisodes.reduce((sum, episode) => sum + Number(episode.shotsHit ?? 0), 0);
 
-  const mean = (values) => values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
+  const mean = (values) => (
+    values.length === 0
+      ? 0
+      : values.reduce((sum, value) => sum + value, 0) / values.length
+  );
+
   const median = (values) => {
     if (values.length === 0) return 0;
     const middle = Math.floor(values.length / 2);
-    if (values.length % 2 === 1) return values[middle];
-    return (values[middle - 1] + values[middle]) / 2;
+    return values.length % 2 === 1
+      ? values[middle]
+      : (values[middle - 1] + values[middle]) / 2;
   };
 
   return {
@@ -56,42 +72,67 @@ export function aggregateEpisodes(episodes) {
     meanAccuracy: mean(accuracies),
     totalShotsFired: shotsFired,
     totalShotsHit: shotsHit,
-    baselineMet: episodesWithKill >= 1 && totalEpisodes >= 5
+    baselineMet: totalEpisodes >= 5 && episodesWithKill >= 1
   };
 }
 
-export function compareAggregates(candidate, champion, options = {}) {
+export function compareBatchMetrics(candidate, champion, options = {}) {
   const minScoreDelta = Number(options.minScoreDelta ?? 0);
 
-  const checks = [
-    ["episodesWithKill", 1],
-    ["totalKills", 1],
+  const ladder = [
+    ["episodesWithKill", 0],
+    ["totalKills", 0],
     ["bestScore", minScoreDelta],
     ["medianScore", minScoreDelta],
-    ["meanScore", minScoreDelta],
     ["meanSurvivalTimeS", 0.5]
   ];
 
-  for (const [key, minDelta] of checks) {
+  for (const [key, minDelta] of ladder) {
     const candidateValue = Number(candidate?.[key] ?? 0);
     const championValue = Number(champion?.[key] ?? 0);
+
     if (candidateValue > championValue + minDelta) {
-      return { promote: true, reason: `candidate improved ${key}`, key, delta: candidateValue - championValue };
+      return {
+        promote: true,
+        reason: `candidate improved ${key}`,
+        key,
+        delta: candidateValue - championValue
+      };
     }
+
     if (championValue > candidateValue + minDelta) {
-      return { promote: false, reason: `candidate regressed ${key}`, key, delta: candidateValue - championValue };
+      return {
+        promote: false,
+        reason: `candidate regressed ${key}`,
+        key,
+        delta: candidateValue - championValue
+      };
     }
   }
 
-  if (
-    Number(candidate?.meanAccuracy ?? 0) > Number(champion?.meanAccuracy ?? 0) + 0.03
-    && Number(candidate?.totalShotsFired ?? 0) >= Number(champion?.totalShotsFired ?? 0) * 0.7
-  ) {
-    return { promote: true, reason: "candidate improved meanAccuracy with comparable shot volume", key: "meanAccuracy", delta: Number(candidate.meanAccuracy) - Number(champion.meanAccuracy) };
+  const candidateAccuracy = Number(candidate?.meanAccuracy ?? 0);
+  const championAccuracy = Number(champion?.meanAccuracy ?? 0);
+  const candidateShots = Number(candidate?.totalShotsFired ?? 0);
+  const championShots = Number(champion?.totalShotsFired ?? 0);
+
+  if (candidateAccuracy > championAccuracy + 0.03 && candidateShots >= championShots * 0.7) {
+    return {
+      promote: true,
+      reason: "candidate improved meanAccuracy with comparable shot volume",
+      key: "meanAccuracy",
+      delta: candidateAccuracy - championAccuracy
+    };
   }
 
-  return { promote: false, reason: "candidate did not beat champion on the comparison ladder", key: "tie", delta: 0 };
+  return {
+    promote: false,
+    reason: "candidate did not beat champion on the comparison ladder",
+    key: "tie",
+    delta: 0
+  };
 }
+
+export const compareAggregates = compareBatchMetrics;
 
 const PARAMETER_FAMILIES = Object.freeze({
   movement: [
@@ -117,10 +158,6 @@ const PARAMETER_FAMILIES = Object.freeze({
   ]
 });
 
-function randomChoice(rng, values) {
-  return values[Math.floor(rng() * values.length)];
-}
-
 function jitterNumber(current, magnitude, rng, min, max, integer = false) {
   const signed = (rng() * 2 - 1) * magnitude;
   const next = clamp(current + signed, min, max);
@@ -138,12 +175,12 @@ export function mutatePolicy(policy, options = {}) {
     ? ["movement", "sweep", "combat", "panic"]
     : ["combat", "panic", "sweep", "movement"];
 
-  const chosenFamily = randomChoice(rng, familyNames);
+  const chosenFamily = choose(rng, familyNames);
   const family = PARAMETER_FAMILIES[chosenFamily];
   const mutationCount = targetMode === "kill-bootstrap" ? 2 : 1;
 
   for (let index = 0; index < mutationCount; index += 1) {
-    const [key, magnitude] = randomChoice(rng, family);
+    const [key, magnitude] = choose(rng, family);
     const scaledMagnitude = magnitude * explorationScale;
 
     switch (key) {
@@ -210,22 +247,27 @@ export function deriveSemanticNotes(previousPolicy, nextPolicy, previousAggregat
     if (text) notes.push(text);
   };
 
-  if (nextAggregate.episodesWithKill > previousAggregate.episodesWithKill) {
-    push("Promoted policy improved first-kill reliability.");
+  if (Number(nextAggregate?.episodesWithKill ?? 0) > Number(previousAggregate?.episodesWithKill ?? 0)) {
+    push("Promoted policy improved kill-positive batch count.");
   }
-  if (nextAggregate.bestScore > previousAggregate.bestScore) {
-    push("Promoted policy improved best score in the evaluation batch.");
+
+  if (Number(nextAggregate?.bestScore ?? 0) > Number(previousAggregate?.bestScore ?? 0)) {
+    push("Promoted policy improved best batch score.");
   }
-  if (nextPolicy.sweepPeriodTicks < previousPolicy.sweepPeriodTicks) {
+
+  if (Number(nextPolicy.sweepPeriodTicks) < Number(previousPolicy.sweepPeriodTicks)) {
     push("A shorter sweep period was part of the promoted candidate.");
   }
-  if (nextPolicy.strafeMagnitude > previousPolicy.strafeMagnitude) {
+
+  if (Number(nextPolicy.strafeMagnitude) > Number(previousPolicy.strafeMagnitude)) {
     push("A wider strafe was part of the promoted candidate.");
   }
-  if (nextPolicy.reloadThreshold < previousPolicy.reloadThreshold) {
+
+  if (Number(nextPolicy.reloadThreshold) < Number(previousPolicy.reloadThreshold)) {
     push("A later reload threshold was part of the promoted candidate.");
   }
-  if (nextPolicy.panicTurnDeg > previousPolicy.panicTurnDeg) {
+
+  if (Number(nextPolicy.panicTurnDeg) > Number(previousPolicy.panicTurnDeg)) {
     push("A stronger panic turn was part of the promoted candidate.");
   }
 
@@ -234,24 +276,54 @@ export function deriveSemanticNotes(previousPolicy, nextPolicy, previousAggregat
 
 export function upsertHallOfFame(hallOfFame, entry, options = {}) {
   const maxEntries = Number(options.maxEntries ?? 5);
-  const next = [...(Array.isArray(hallOfFame) ? hallOfFame : []), entry];
+  const withoutDuplicate = (Array.isArray(hallOfFame) ? hallOfFame : []).filter(
+    (candidate) => candidate.id !== entry.id
+  );
+  const next = [...withoutDuplicate, entry];
 
   next.sort((left, right) => {
-    const aggregateLeft = left.aggregate ?? {};
-    const aggregateRight = right.aggregate ?? {};
-    const decision = compareAggregates(aggregateLeft, aggregateRight, { minScoreDelta: 0 });
-    if (decision.promote) return -1;
-    const reverseDecision = compareAggregates(aggregateRight, aggregateLeft, { minScoreDelta: 0 });
-    if (reverseDecision.promote) return 1;
-    return 0;
+    const leftVsRight = compareBatchMetrics(left.aggregate ?? {}, right.aggregate ?? {}, { minScoreDelta: 0 });
+    if (leftVsRight.promote) return -1;
+
+    const rightVsLeft = compareBatchMetrics(right.aggregate ?? {}, left.aggregate ?? {}, { minScoreDelta: 0 });
+    if (rightVsLeft.promote) return 1;
+
+    return String(right.promotedAt ?? "").localeCompare(String(left.promotedAt ?? ""));
   });
 
   return next.slice(0, maxEntries);
 }
 
 export function selectParentFromHallOfFame(hallOfFame, rng) {
-  const entries = Array.isArray(hallOfFame) && hallOfFame.length > 0 ? hallOfFame : [];
+  const entries = Array.isArray(hallOfFame) ? hallOfFame : [];
   if (entries.length === 0) return null;
-  const weighted = entries.flatMap((entry, index) => Array.from({ length: Math.max(1, entries.length - index) }, () => entry));
-  return randomChoice(rng, weighted);
+
+  const weighted = entries.flatMap((entry, index) => (
+    Array.from({ length: Math.max(1, entries.length - index) }, () => entry)
+  ));
+
+  return choose(rng, weighted);
+}
+
+export function suggestNextExperiments(championEntry, stagnationCount = 0) {
+  const aggregate = championEntry?.aggregate ?? {};
+  const suggestions = [];
+
+  if (Number(aggregate.episodesWithKill ?? 0) === 0) {
+    suggestions.push("Tighten sweep timing and revisit strafe width to bootstrap the first kill.");
+    suggestions.push("Increase panic reaction strength after damage if deaths happen quickly.");
+  } else {
+    suggestions.push("Optimize score consistency before widening exploration further.");
+    suggestions.push("Tune reload threshold and burst cadence only after movement remains stable.");
+  }
+
+  if (stagnationCount >= 3) {
+    suggestions.push("Sample a hall-of-fame parent before widening the mutation surface.");
+  }
+
+  if (Number(aggregate.meanAccuracy ?? 0) < 0.15) {
+    suggestions.push("Reduce wasted fire by shortening bursts or slowing sweep changes.");
+  }
+
+  return suggestions.slice(0, 4);
 }

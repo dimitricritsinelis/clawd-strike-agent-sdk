@@ -1,0 +1,31 @@
+name: Public Agent SDK
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  contract-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm contract:check
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm smoke:no-context
+        env:
+          BASE_URL: https://clawd-strike.vercel.app/

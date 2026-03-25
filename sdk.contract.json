@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "workflowContract": "agentic-gameplay-v1",
+  "runtimeContract": {
+    "apiVersion": 1,
+    "name": "public-agent-v1"
+  },
+  "game": {
+    "canonicalHost": "https://clawd-strike.vercel.app/",
+    "canonicalSkillsUrl": "https://clawd-strike.vercel.app/skills.md"
+  },
+  "companionRepo": {
+    "name": "clawd-strike-agent-sdk",
+    "url": "https://github.com/dimitricritsinelis/clawd-strike-agent-sdk"
+  },
+  "requiredScripts": [
+    "contract:check",
+    "smoke:no-context",
+    "agent:baseline",
+    "agent:learn"
+  ],
+  "requiredFiles": [
+    ".github/workflows/public-agent-sdk.yml",
+    ".gitignore",
+    "README.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "MEMORY.md",
+    "SELF_LEARNING.md",
+    "package.json",
+    "sdk.contract.json",
+    "skills.md",
+    "config/default-policy.json",
+    "config/learning.config.json",
+    "docs/PUBLIC_CONTRACT.md",
+    "docs/OUTPUTS.md",
+    "docs/POLICY_SCHEMA.md",
+    "docs/TROUBLESHOOTING.md",
+    "examples/no-context-smoke.mjs",
+    "examples/baseline-loop.mjs",
+    "examples/self-improving-runner.mjs",
+    "scripts/validate-sdk-contract.mjs",
+    "src/index.mjs",
+    "src/runtime/contract.mjs",
+    "src/runtime/config.mjs",
+    "src/runtime/browser.mjs",
+    "src/runtime/episode-runner.mjs",
+    "src/policies/index.mjs",
+    "src/policies/adaptive-sweeper.mjs",
+    "src/learn/optimizer.mjs",
+    "src/learn/storage.mjs",
+    "src/learn/memory-docs.mjs",
+    "src/utils/fs.mjs",
+    "src/utils/random.mjs",
+    "output/self-improving-runner/.gitkeep",
+    "output/self-improving-runner/candidate-summaries/.gitkeep"
+  ],
+  "requiredLearningOutputs": [
+    "output/self-improving-runner/champion-policy.json",
+    "output/self-improving-runner/episodes.jsonl",
+    "output/self-improving-runner/latest-session-summary.json",
+    "output/self-improving-runner/candidate-summaries/*.json"
+  ]
+}

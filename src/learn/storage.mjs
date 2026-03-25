@@ -1,16 +1,19 @@
 import path from "node:path";
-import { ensureDir, appendJsonl, readJsonIfExists, writeJson } from "../index.mjs";
+import { appendJsonl, ensureDir, readJsonIfExists, writeJson } from "../utils/fs.mjs";
 
 export async function ensureLearningLayout(outputDir) {
   await ensureDir(outputDir);
   await ensureDir(path.join(outputDir, "candidate-summaries"));
+
   return {
     outputDir,
     episodesPath: path.join(outputDir, "episodes.jsonl"),
     championPath: path.join(outputDir, "champion-policy.json"),
     semanticPath: path.join(outputDir, "semantic-memory.json"),
     hallOfFamePath: path.join(outputDir, "hall-of-fame.json"),
+    scoreboardPath: path.join(outputDir, "scoreboard.json"),
     latestSessionSummaryPath: path.join(outputDir, "latest-session-summary.json"),
+    resolvedRunConfigPath: path.join(outputDir, "resolved-run-config.json"),
     candidateDir: path.join(outputDir, "candidate-summaries")
   };
 }
@@ -22,6 +25,7 @@ export async function loadLearningState(layout) {
     notes: []
   });
   const hallOfFame = await readJsonIfExists(layout.hallOfFamePath, []);
+
   return { champion, semanticMemory, hallOfFame };
 }
 
@@ -49,4 +53,8 @@ export async function writeCandidateSummary(layout, candidateId, summary) {
 
 export async function writeLatestSessionSummary(layout, summary) {
   await writeJson(layout.latestSessionSummaryPath, summary);
+}
+
+export async function writeScoreboard(layout, scoreboard) {
+  await writeJson(layout.scoreboardPath, scoreboard);
 }
