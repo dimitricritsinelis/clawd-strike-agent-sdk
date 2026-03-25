@@ -1,0 +1,19 @@
+{
+  "family": "adaptive-sweeper",
+  "version": 1,
+  "forwardMove": 1,
+  "strafeMagnitude": 0.28,
+  "strafePeriodTicks": 16,
+  "sweepAmplitudeDeg": 1.35,
+  "sweepPeriodTicks": 22,
+  "fireBurstLengthTicks": 2,
+  "fireBurstCooldownTicks": 4,
+  "reloadThreshold": 3,
+  "panicTurnDeg": 6,
+  "panicTicks": 8,
+  "crouchEveryTicks": 0,
+  "pauseEveryTicks": 0,
+  "pauseDurationTicks": 0,
+  "postScoreHoldTicks": 5,
+  "reverseOnDamage": true
+}

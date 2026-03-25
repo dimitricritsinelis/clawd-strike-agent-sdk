@@ -1,51 +1,88 @@
+import path from "node:path";
 import {
-  PUBLIC_AGENT_CANONICAL_HOST,
-  advance,
-  applyAction,
-  clickPlayAgainIfVisible,
+  aggregateEpisodes,
+  attachConsoleRecorder,
+  createAdaptiveSweeperController,
+  ensureDir,
   gotoAgentRuntime,
   launchBrowser,
-  readState,
-  waitForRespawn
+  loadDefaultPolicy,
+  persistResolvedConfig,
+  resolveBaselineConfig,
+  runPolicyEpisodes,
+  writeJson
 } from "../src/index.mjs";
-import { createAdaptiveSweeperController, DEFAULT_ADAPTIVE_SWEEPER_POLICY } from "../src/policies/adaptive-sweeper.mjs";
 
-const BASE_URL = new URL(process.env.BASE_URL ?? PUBLIC_AGENT_CANONICAL_HOST).toString();
-const HEADLESS = process.env.HEADLESS !== "false";
-const MAX_STEPS = Math.max(1, Number(process.env.MAX_STEPS ?? 400));
-const STEP_MS = Math.max(100, Number(process.env.STEP_MS ?? 250));
+const config = await resolveBaselineConfig();
+await ensureDir(config.outputDir);
+await persistResolvedConfig(config.outputDir, config);
 
-const controller = createAdaptiveSweeperController(DEFAULT_ADAPTIVE_SWEEPER_POLICY);
-const { browser, context, page } = await launchBrowser({ headless: HEADLESS });
+const policy = await loadDefaultPolicy();
+const policyEntry = {
+  id: 0,
+  label: "baseline",
+  parentId: null,
+  policy
+};
+
+const { browser, context, page } = await launchBrowser({ headless: config.headless });
+const consoleRecorder = attachConsoleRecorder(page);
+
+const sessionSummary = {
+  mode: "baseline",
+  startedAt: new Date().toISOString(),
+  baseUrl: config.baseUrl,
+  agentName: config.agentName,
+  modelProvider: config.modelProvider,
+  modelName: config.modelName,
+  headless: config.headless,
+  stepMs: config.stepMs,
+  targetEpisodes: config.targetEpisodes,
+  outputDir: config.outputDir
+};
 
 try {
-  await gotoAgentRuntime(page, { baseUrl: BASE_URL, agentName: "StarterBaseline" });
+  await gotoAgentRuntime(page, {
+    baseUrl: config.baseUrl,
+    agentName: `${config.agentName}-Baseline`
+  });
 
-  for (let step = 0; step < MAX_STEPS; step += 1) {
-    const state = await readState(page);
+  const controller = createAdaptiveSweeperController(policy);
+  const evaluation = await runPolicyEpisodes({
+    page,
+    controller,
+    policyEntry,
+    targetEpisodes: config.targetEpisodes,
+    stepMs: config.stepMs,
+    maxStepsPerEpisode: config.maxStepsPerEpisode
+  });
 
-    if (state.gameplay?.alive === false || state.gameplay?.gameOverVisible === true) {
-      const clicked = await clickPlayAgainIfVisible(page);
-      if (clicked) {
-        controller.resetEpisode();
-        await waitForRespawn(page);
-      } else {
-        await advance(page, STEP_MS);
-      }
-      continue;
-    }
+  const aggregate = aggregateEpisodes(evaluation.episodes);
 
-    const action = controller.nextAction(state);
-    await applyAction(page, action);
-    await advance(page, STEP_MS);
+  sessionSummary.finishedAt = new Date().toISOString();
+  sessionSummary.aggregate = aggregate;
+  sessionSummary.episode = evaluation.episodes[0] ?? null;
+  sessionSummary.console = consoleRecorder.counts();
+
+  if (consoleRecorder.counts().errorCount > 0) {
+    throw new Error(`Console/page errors observed: ${consoleRecorder.counts().errorCount}`);
   }
 
-  const finalState = await readState(page);
+  await writeJson(path.join(config.outputDir, "latest-session-summary.json"), sessionSummary);
+  await writeJson(path.join(config.outputDir, "latest-episode.json"), evaluation.episodes[0] ?? null);
+
   console.log(JSON.stringify({
-    finalScore: finalState.score?.current ?? null,
-    best: finalState.score?.best ?? null,
-    lastRun: finalState.score?.lastRun ?? null
+    aggregate,
+    outputDir: config.outputDir
   }, null, 2));
+} catch (error) {
+  sessionSummary.finishedAt = new Date().toISOString();
+  sessionSummary.failed = true;
+  sessionSummary.failure = error instanceof Error ? error.message : String(error);
+  sessionSummary.console = consoleRecorder.counts();
+
+  await writeJson(path.join(config.outputDir, "latest-session-summary.json"), sessionSummary);
+  throw error;
 } finally {
   await context.close();
   await browser.close();

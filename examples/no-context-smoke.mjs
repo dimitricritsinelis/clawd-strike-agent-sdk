@@ -1,6 +1,5 @@
 import path from "node:path";
 import {
-  PUBLIC_AGENT_CANONICAL_HOST,
   advance,
   applyAction,
   attachConsoleRecorder,
@@ -9,33 +8,27 @@ import {
   getAgentApiStatus,
   gotoAgentRuntime,
   launchBrowser,
+  persistResolvedConfig,
   readState,
+  resolveSmokeConfig,
   waitForRespawn,
   writeJson
 } from "../src/index.mjs";
 
-function timestampId() {
-  return new Date().toISOString().replace(/[:.]/g, "-");
-}
+const config = await resolveSmokeConfig();
+await ensureDir(config.outputDir);
+await persistResolvedConfig(config.outputDir, config);
 
-const BASE_URL = new URL(process.env.BASE_URL ?? PUBLIC_AGENT_CANONICAL_HOST).toString();
-const HEADLESS = process.env.HEADLESS !== "false";
-const REQUIRED_DEATHS = Math.max(1, Number(process.env.REQUIRED_DEATHS ?? 1));
-const MAX_STEPS = Math.max(1, Number(process.env.MAX_STEPS ?? 120));
-const STEP_MS = Math.max(100, Number(process.env.STEP_MS ?? 500));
-const OUTPUT_DIR = path.resolve(process.cwd(), process.env.OUTPUT_DIR ?? `output/no-context-smoke/${timestampId()}`);
-
-await ensureDir(OUTPUT_DIR);
-
-const { browser, context, page } = await launchBrowser({ headless: HEADLESS });
+const { browser, context, page } = await launchBrowser({ headless: config.headless });
 const consoleRecorder = attachConsoleRecorder(page);
 
 const summary = {
-  baseUrl: BASE_URL,
-  headless: HEADLESS,
-  requiredDeaths: REQUIRED_DEATHS,
-  maxSteps: MAX_STEPS,
-  stepMs: STEP_MS,
+  mode: "smoke",
+  baseUrl: config.baseUrl,
+  headless: config.headless,
+  requiredDeaths: config.requiredSmokeDeaths,
+  maxSteps: config.smokeMaxSteps,
+  stepMs: config.stepMs,
   startedAt: new Date().toISOString(),
   runtime: {
     apiStatus: null,
@@ -46,13 +39,25 @@ const summary = {
 };
 
 try {
-  await gotoAgentRuntime(page, { baseUrl: BASE_URL, agentName: "StarterSmoke" });
+  await gotoAgentRuntime(page, {
+    baseUrl: config.baseUrl,
+    agentName: `${config.agentName}-Smoke`
+  });
+
   summary.runtime.apiStatus = await getAgentApiStatus(page);
-  await page.screenshot({ path: path.join(OUTPUT_DIR, "runtime-start.png") });
+
+  if (!summary.runtime.apiStatus.agentApplyAction) {
+    throw new Error("Smoke check failed: agent_apply_action is unavailable.");
+  }
+  if (!summary.runtime.apiStatus.agentObserve && !summary.runtime.apiStatus.renderGameToText) {
+    throw new Error("Smoke check failed: no public state reader is available.");
+  }
+
+  await page.screenshot({ path: path.join(config.outputDir, "runtime-start.png") });
 
   let previousAlive = true;
 
-  for (let step = 0; step < MAX_STEPS && summary.runtime.deathsObserved < REQUIRED_DEATHS; step += 1) {
+  for (let step = 0; step < config.smokeMaxSteps && summary.runtime.deathsObserved < config.requiredSmokeDeaths; step += 1) {
     const state = await readState(page);
     const alive = state.gameplay?.alive === true;
     const gameOverVisible = state.gameplay?.gameOverVisible === true;
@@ -68,15 +73,13 @@ try {
       if (previousAlive) {
         summary.runtime.deathsObserved += 1;
         summary.runtime.cycles.push(deathSummary);
-        await page.screenshot({
-          path: path.join(OUTPUT_DIR, `death-${deathSummary.deathIndex}.png`)
-        });
+        await page.screenshot({ path: path.join(config.outputDir, `death-${deathSummary.deathIndex}.png`) });
       }
 
       const clicked = await clickPlayAgainIfVisible(page);
       if (!clicked) {
         previousAlive = false;
-        await advance(page, STEP_MS);
+        await advance(page, config.stepMs);
         continue;
       }
 
@@ -87,24 +90,29 @@ try {
 
       summary.runtime.respawnsObserved += 1;
       await page.screenshot({
-        path: path.join(OUTPUT_DIR, `respawn-${summary.runtime.respawnsObserved}.png`)
+        path: path.join(config.outputDir, `respawn-${summary.runtime.respawnsObserved}.png`)
       });
+
       previousAlive = true;
       continue;
     }
 
     previousAlive = alive;
+
     await applyAction(page, {
       moveX: step % 60 < 30 ? 0.25 : -0.2,
       moveZ: 1,
       lookYawDelta: step % 2 === 0 ? 1.35 : -0.7,
       fire: step % 10 === 0
     });
-    await advance(page, STEP_MS);
+
+    await advance(page, config.stepMs);
   }
 
-  if (summary.runtime.deathsObserved < REQUIRED_DEATHS) {
-    throw new Error(`Observed ${summary.runtime.deathsObserved} deaths; expected ${REQUIRED_DEATHS}.`);
+  if (summary.runtime.deathsObserved < config.requiredSmokeDeaths) {
+    throw new Error(
+      `Observed ${summary.runtime.deathsObserved} deaths; expected ${config.requiredSmokeDeaths}.`
+    );
   }
 
   if (consoleRecorder.counts().errorCount > 0) {
@@ -112,22 +120,26 @@ try {
   }
 
   summary.finishedAt = new Date().toISOString();
-  await writeJson(path.join(OUTPUT_DIR, "summary.json"), summary);
-  await writeJson(path.join(OUTPUT_DIR, "console.json"), {
+  await writeJson(path.join(config.outputDir, "summary.json"), summary);
+  await writeJson(path.join(config.outputDir, "console.json"), {
     events: consoleRecorder.snapshot(),
     counts: consoleRecorder.counts()
   });
 
-  console.log(`[smoke:no-context] pass | deaths=${summary.runtime.deathsObserved} | respawns=${summary.runtime.respawnsObserved} | output=${OUTPUT_DIR}`);
+  console.log(
+    `[smoke:no-context] pass | deaths=${summary.runtime.deathsObserved} | respawns=${summary.runtime.respawnsObserved} | output=${config.outputDir}`
+  );
 } catch (error) {
   summary.finishedAt = new Date().toISOString();
   summary.failed = true;
   summary.failure = error instanceof Error ? error.message : String(error);
-  await writeJson(path.join(OUTPUT_DIR, "summary.json"), summary);
-  await writeJson(path.join(OUTPUT_DIR, "console.json"), {
+
+  await writeJson(path.join(config.outputDir, "summary.json"), summary);
+  await writeJson(path.join(config.outputDir, "console.json"), {
     events: consoleRecorder.snapshot(),
     counts: consoleRecorder.counts()
   });
+
   throw error;
 } finally {
   await context.close();
