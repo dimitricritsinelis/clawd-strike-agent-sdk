@@ -23,9 +23,9 @@ Use four layers:
 
 ## Stage order
 
-1. hit bootstrap
-2. kill bootstrap
-3. score optimization
+1. `bootstrap_hit`
+2. `bootstrap_kill`
+3. `stabilize_score`
 
 ## Promotion stance
 
@@ -35,8 +35,9 @@ If the champion has zero hits and zero kills:
 
 - prioritize hit-positive episodes
 - then total hits
-- then kills
-- then score and survival
+- then meaningful hit rate
+- then earlier first hit
+- then weak score and survival tie-breaks
 
 If the champion has hits but zero kills:
 
@@ -63,5 +64,6 @@ Durable learning requires:
 
 - raising the attempt budget after a completely hitless batch and calling that learning
 - promoting a survival-only zero-hit candidate
+- mutating around a single seed forever instead of screening a small bootstrap catalog
 - full controller rewrites every attempt
 - treating hidden truth as fair game

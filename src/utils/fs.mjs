@@ -40,8 +40,18 @@ export async function writeText(filePath, text) {
   await writeFile(filePath, normalized, "utf8");
 }
 
+export async function writeTextExclusive(filePath, text) {
+  await ensureDir(path.dirname(filePath));
+  const normalized = text.endsWith("\n") ? text : `${text}\n`;
+  await writeFile(filePath, normalized, { encoding: "utf8", flag: "wx" });
+}
+
 export async function writeJson(filePath, payload) {
   await writeText(filePath, JSON.stringify(payload, null, 2));
+}
+
+export async function writeJsonExclusive(filePath, payload) {
+  await writeTextExclusive(filePath, JSON.stringify(payload, null, 2));
 }
 
 export async function appendJsonl(filePath, payload) {

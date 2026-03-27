@@ -25,11 +25,9 @@ Do not skip the smoke command on a fresh setup.
 
 ## Phase order
 
-1. bootstrap
-2. baseline
-3. hit bootstrap
-4. kill bootstrap
-5. score optimization
+1. `bootstrap_hit`
+2. `bootstrap_kill`
+3. `stabilize_score`
 
 ## Required behavior
 
@@ -70,20 +68,25 @@ Locked by default:
 - change config and policy parameters first
 - compare candidates on batches, not single runs
 - promote only on evidence
-- use the stage-aware ladder:
-  1. if champion has zero hits and zero kills:
-     - more hit-positive episodes
-     - more total hits
-     - then kills, score, survival, accuracy
-  2. if champion has hits but zero kills:
-     - more kill-positive episodes
-     - more total kills
-     - then hits, score, survival, accuracy
-  3. once baseline is met:
+- use the phase-aware ladder:
+  1. in `bootstrap_hit`:
+     - hit-positive episodes
+     - total hits
+     - meaningful hit rate
+     - earlier first hit
+     - then weak score/survival tie-breaks
+  2. in `bootstrap_kill`:
+     - kill-positive episodes
+     - total kills
+     - then hit quality
+     - then weak score/survival tie-breaks
+  3. in `stabilize_score`:
      - kills
      - score
-     - survival
-     - accuracy with comparable shot volume
+     - hit quality
+     - then survival and stability
+- survival-only zero-contact batches do not count as progress
+- use `lookYawDelta`, `lookPitchDelta`, and `feedback.recentEvents` when available
 - update `MEMORY.md` often
 - curate `SELF_LEARNING.md` conservatively
 

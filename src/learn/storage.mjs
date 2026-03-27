@@ -1,14 +1,40 @@
+import crypto from "node:crypto";
 import path from "node:path";
 import { readdir } from "node:fs/promises";
 import {
   appendJsonl,
   ensureDir,
-  fileExists,
   readJsonIfExists,
-  writeJson
+  writeJson,
+  writeJsonExclusive
 } from "../utils/fs.mjs";
 
-const CANDIDATE_SUMMARY_FILENAME = /^(\d+)\.json$/;
+const CANDIDATE_SUMMARY_FILENAME = /^(.*)\.json$/;
+
+function compareIds(left, right) {
+  return String(left).localeCompare(String(right), undefined, { numeric: true });
+}
+
+export function sanitizeCandidateId(candidateId) {
+  const raw = String(candidateId ?? "").trim();
+  if (!raw) return "";
+
+  return raw
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+}
+
+export function createLearningSessionId(prefix = "session") {
+  const timestamp = new Date().toISOString()
+    .replace(/[:-]/g, "")
+    .replace(/\./g, "")
+    .replace("T", "t")
+    .replace("Z", "z");
+
+  return sanitizeCandidateId(`${prefix}-${timestamp}-${crypto.randomUUID().slice(0, 8)}`);
+}
 
 export async function ensureLearningLayout(outputDir) {
   await ensureDir(outputDir);
@@ -30,8 +56,9 @@ export async function ensureLearningLayout(outputDir) {
 export async function loadLearningState(layout) {
   const champion = await readJsonIfExists(layout.championPath, null);
   const semanticMemory = await readJsonIfExists(layout.semanticPath, {
-    version: 1,
-    notes: []
+    version: 2,
+    notes: [],
+    contactSignals: []
   });
   const hallOfFame = await readJsonIfExists(layout.hallOfFamePath, []);
 
@@ -55,8 +82,11 @@ export async function writeHallOfFame(layout, hallOfFame) {
 }
 
 export function candidateSummaryPath(layout, candidateId) {
-  const numericId = Math.max(0, Math.round(Number(candidateId) || 0));
-  return path.join(layout.candidateDir, `${String(numericId).padStart(4, "0")}.json`);
+  const stem = sanitizeCandidateId(candidateId);
+  if (!stem) {
+    throw new Error(`Invalid candidate id '${candidateId}'.`);
+  }
+  return path.join(layout.candidateDir, `${stem}.json`);
 }
 
 export async function readCandidateSummaryIds(layout) {
@@ -64,33 +94,56 @@ export async function readCandidateSummaryIds(layout) {
   const ids = new Set();
 
   for (const entry of entries) {
-    if (!entry.isFile()) continue;
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
 
     const matched = CANDIDATE_SUMMARY_FILENAME.exec(entry.name);
     if (matched) {
-      ids.add(Number(matched[1]));
+      ids.add(sanitizeCandidateId(matched[1]));
     }
 
-    if (!entry.name.endsWith(".json")) continue;
-
     const summary = await readJsonIfExists(path.join(layout.candidateDir, entry.name), null);
-    const candidateId = Number(summary?.candidate?.id ?? summary?.id ?? NaN);
-    if (Number.isFinite(candidateId)) {
-      ids.add(Math.max(0, Math.round(candidateId)));
+    const candidateId = sanitizeCandidateId(summary?.candidate?.id ?? summary?.id ?? "");
+    if (candidateId) {
+      ids.add(candidateId);
     }
   }
 
-  return [...ids].sort((left, right) => left - right);
+  return [...ids].filter(Boolean).sort(compareIds);
+}
+
+export async function createCandidateIdAllocator(layout, options = {}) {
+  const sessionId = sanitizeCandidateId(options.sessionId ?? createLearningSessionId("candidate"));
+  const knownIds = new Set(await readCandidateSummaryIds(layout));
+  let counter = 0;
+
+  return function allocateCandidateId() {
+    while (true) {
+      const candidateId = `${sessionId}-${String(counter).padStart(4, "0")}`;
+      counter += 1;
+
+      if (knownIds.has(candidateId)) {
+        continue;
+      }
+
+      knownIds.add(candidateId);
+      return candidateId;
+    }
+  };
 }
 
 export async function deriveNextCandidateId(layout, persistedState = {}) {
-  const ids = new Set(await readCandidateSummaryIds(layout));
+  const ids = new Set();
   const addId = (value) => {
     const numeric = Number(value);
     if (Number.isFinite(numeric)) {
       ids.add(Math.max(0, Math.round(numeric)));
     }
   };
+
+  const existingIds = await readCandidateSummaryIds(layout);
+  for (const value of existingIds) {
+    addId(value);
+  }
 
   addId(persistedState?.champion?.id);
   for (const entry of Array.isArray(persistedState?.hallOfFame) ? persistedState.hallOfFame : []) {
@@ -102,11 +155,16 @@ export async function deriveNextCandidateId(layout, persistedState = {}) {
 
 export async function writeCandidateSummary(layout, candidateId, summary) {
   const filePath = candidateSummaryPath(layout, candidateId);
-  if (await fileExists(filePath)) {
-    throw new Error(`Candidate summary already exists for id ${candidateId}: ${filePath}`);
+
+  try {
+    await writeJsonExclusive(filePath, summary);
+    return filePath;
+  } catch (error) {
+    if (error && typeof error === "object" && error.code === "EEXIST") {
+      throw new Error(`Candidate summary already exists for id ${candidateId}: ${filePath}`);
+    }
+    throw error;
   }
-  await writeJson(filePath, summary);
-  return filePath;
 }
 
 export async function writeLatestSessionSummary(layout, summary) {

@@ -6,17 +6,18 @@ import { basename } from "node:path";
 import { mkdtemp } from "node:fs/promises";
 import {
   candidateSummaryPath,
+  createCandidateIdAllocator,
   deriveNextCandidateId,
   ensureLearningLayout,
   writeCandidateSummary
 } from "../src/learn/storage.mjs";
 
-test("next candidate id comes from on-disk summaries and persisted ids", async () => {
+test("legacy numeric candidate id derivation still respects on-disk numeric summaries", async () => {
   const outputDir = await mkdtemp(path.join(os.tmpdir(), "clawd-storage-"));
   const layout = await ensureLearningLayout(outputDir);
 
-  await writeCandidateSummary(layout, 2, { candidate: { id: 2 } });
-  await writeCandidateSummary(layout, 14, { candidate: { id: 14 } });
+  await writeCandidateSummary(layout, "2", { candidate: { id: 2 } });
+  await writeCandidateSummary(layout, "14", { candidate: { id: 14 } });
 
   const nextId = await deriveNextCandidateId(layout, {
     champion: { id: 6 },
@@ -26,17 +27,41 @@ test("next candidate id comes from on-disk summaries and persisted ids", async (
   assert.equal(nextId, 15);
 });
 
-test("candidate summary filenames are padded and existing ids are never overwritten", async () => {
+test("repeated sessions produce unique candidate ids and unique summary filenames", async () => {
   const outputDir = await mkdtemp(path.join(os.tmpdir(), "clawd-storage-"));
   const layout = await ensureLearningLayout(outputDir);
 
-  const summaryPath = await writeCandidateSummary(layout, 7, { candidate: { id: 7 } });
+  const allocateSessionOne = await createCandidateIdAllocator(layout, { sessionId: "session-one" });
+  const firstId = allocateSessionOne();
+  const secondId = allocateSessionOne();
+  await writeCandidateSummary(layout, firstId, { candidate: { id: firstId } });
+  await writeCandidateSummary(layout, secondId, { candidate: { id: secondId } });
 
-  assert.equal(basename(summaryPath), "0007.json");
-  assert.equal(candidateSummaryPath(layout, 12).endsWith("/0012.json"), true);
+  const allocateSessionTwo = await createCandidateIdAllocator(layout, { sessionId: "session-two" });
+  const thirdId = allocateSessionTwo();
+  await writeCandidateSummary(layout, thirdId, { candidate: { id: thirdId } });
+
+  assert.notEqual(firstId, secondId);
+  assert.notEqual(secondId, thirdId);
+  assert.notEqual(firstId, thirdId);
+  assert.equal(basename(candidateSummaryPath(layout, firstId)), `${firstId}.json`);
+  assert.equal(basename(candidateSummaryPath(layout, thirdId)), `${thirdId}.json`);
+});
+
+test("candidate summaries are written exclusively and never silently overwritten", async () => {
+  const outputDir = await mkdtemp(path.join(os.tmpdir(), "clawd-storage-"));
+  const layout = await ensureLearningLayout(outputDir);
+
+  const summaryPath = await writeCandidateSummary(layout, "session-one-0007", {
+    candidate: { id: "session-one-0007" }
+  });
+
+  assert.equal(basename(summaryPath), "session-one-0007.json");
 
   await assert.rejects(
-    () => writeCandidateSummary(layout, 7, { candidate: { id: 7 } }),
+    () => writeCandidateSummary(layout, "session-one-0007", {
+      candidate: { id: "session-one-0007" }
+    }),
     /already exists/
   );
 });

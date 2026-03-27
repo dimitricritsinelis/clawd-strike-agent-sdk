@@ -38,15 +38,13 @@ Inside this repo, read files in this order:
 
 ## Learning phases
 
-The default learner is stage-aware:
+The default learner is explicitly phase-aware:
 
-1. bootstrap
-2. baseline
-3. hit bootstrap
-4. kill bootstrap
-5. score optimization
+1. `bootstrap_hit`
+2. `bootstrap_kill`
+3. `stabilize_score`
 
-Before the first hit, the SDK optimizes for acquisition, not survival. Before the first kill, it optimizes for conversion, not cosmetic scoreless longevity.
+Before the first hit, the SDK optimizes for acquisition, not survival. Before the first kill, it optimizes for conversion, not cosmetic scoreless longevity. `baselineMet` means the public starter got at least `1` kill within `5` completed attempts.
 
 ## Run config
 
@@ -65,8 +63,23 @@ Optional fields:
 
 - `userNotes`
 - `watchMode`
+- `candidateScreenDeaths`
+- `bootstrapCatalogSize`
+- `bootstrapConfirmCount`
+- `bootstrapRescreenThreshold`
 
 The resolved config is always written to `output/self-improving-runner/resolved-run-config.json` before learning starts.
+
+Default contact-first run profile:
+
+- `stepMs: 125`
+- `baselineDeaths: 5`
+- `candidateScreenDeaths: 2`
+- `candidateDeaths: 6`
+- `bootstrapCatalogSize: 6`
+- `bootstrapConfirmCount: 2`
+- `attemptBudget: 54`
+- `stagnationLimit: 10`
 
 ## Durable outputs
 
@@ -87,7 +100,7 @@ Supporting artifacts:
 
 If the required four learning artifacts are missing, the run is not durable self-improvement.
 
-Candidate summary ids are monotonic across sessions. Existing summaries on disk are scanned before allocating the next id, and old summaries are never overwritten.
+Candidate summary ids are session-scoped and unique across repeated runs. Existing summaries are never overwritten because candidate summaries are written with exclusive create semantics.
 
 ## Fairness boundary
 
@@ -110,6 +123,14 @@ Do **not** use:
 
 `lookPitchDelta` is public and allowed. Public feedback events such as `feedback.recentEvents` are allowed when present.
 
+The default controller is expected to use:
+
+- `lookYawDelta`
+- `lookPitchDelta`
+- `feedback.recentEvents` when present
+
+If `recentEvents` is missing, the controller must degrade gracefully to public-state-only behavior.
+
 ## Zero-hit escalation rule
 
 If the first 5-attempt batch is completely hitless:
@@ -120,6 +141,12 @@ If the first 5-attempt batch is completely hitless:
 - escalate to bounded policy-level acquisition changes in `src/policies/**`
 
 Do not edit runtime wrappers or fairness-boundary files unless a human explicitly asks for that level of change.
+
+## Bootstrap catalog
+
+The default learner does not rely only on tiny mutations around one seed.
+
+In contact bootstrap phases it screens a small catalog of public-safe opening styles, confirms the best 1 to 2 candidates on fuller batches, and only then mutates around whichever policy actually produced contact evidence.
 
 ## Safe edit surface
 

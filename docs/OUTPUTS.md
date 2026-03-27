@@ -28,19 +28,13 @@ Supporting-artifact failures should be surfaced as warnings in `latest-session-s
 
 ## Candidate summary ids
 
-Candidate summary filenames are padded and monotonic:
+Candidate summary filenames are session-scoped and collision-safe:
 
-- `0000.json`
-- `0001.json`
-- `0002.json`
+- `learn-20260325t194500123z-ab12cd34-0000.json`
+- `learn-20260325t194500123z-ab12cd34-0001.json`
+- `learn-20260325t201101456z-ef56gh78-0000.json`
 
-The next id is derived from durable on-disk state:
-
-- existing `candidate-summaries/*.json`
-- `champion-policy.json`
-- `hall-of-fame.json`
-
-Older summaries are never overwritten because of id reuse.
+The id allocator scans durable on-disk state and writes summaries with exclusive create semantics, so repeated sessions append evidence instead of silently overwriting older runs.
 
 ## Smoke outputs
 
@@ -63,10 +57,12 @@ Older summaries are never overwritten because of id reuse.
 Each candidate summary includes:
 
 - candidate id, label, and parent id
+- candidate metadata such as bootstrap archetype or mutation origin
 - policy snapshot
 - aggregate metrics
 - champion aggregate at evaluation start
 - `evaluationKind`
+- `learningPhase`
 - `targetMode`
 - `acquisitionMet`
 - `baselineMet`
@@ -96,9 +92,13 @@ Seed or champion backfill summaries may use a non-comparison `evaluationKind`, b
 - resolved run config metadata
 - `acquisitionTarget`
 - `firstKillTarget`
+- `baselineMilestone`
+- `learningPhase`
+- `phaseHistory`
 - `targetMode`
 - `acquisitionMet`
 - `baselineMet`
+- bootstrap catalog rounds and confirmation results
 - promotions
 - rejections
 - final champion
@@ -114,6 +114,7 @@ Each line in `episodes.jsonl` represents one completed death-to-death attempt an
 - candidate label
 - recorded time
 - episode index
+- `learningPhase`
 - final score
 - best score
 - survival time
@@ -122,19 +123,40 @@ Each line in `episodes.jsonl` represents one completed death-to-death attempt an
 - shots fired
 - shots hit
 - accuracy
+- `hitPositive`
+- `killPositive`
+- `timeToFirstDamageS`
+- `timeToFirstHitS`
+- `timeToFirstKillS`
 - death cause
 - last run score
 - `controllerTelemetry`
 
 ## Controller telemetry fields
 
-When present, `controllerTelemetry` includes a small deterministic payload:
+When present, `controllerTelemetry` includes deterministic public-safe acquisition telemetry:
 
+- `learningPhase`
 - `feedbackAvailable`
+- `recentEventCounts`
 - `enemyHitEventsObserved`
 - `killEventsObserved`
 - `damageEventsObserved`
+- `damageReactionCount`
+- `modeTicks`
+- `modeShots`
 - `ticksInEngageMode`
 - `ticksInPanicMode`
+- `burstCount`
+- `avgBurstLength`
+- `pitchBandVisits`
+- `pitchAbsTravel`
+- `yawAbsTravel`
+- `scanDirectionFlips`
+- `shotsWithinWindowAfterDamage`
+- `shotsWithinWindowAfterHit`
+- `timeToFirstDamageS`
+- `timeToFirstHitS`
+- `timeToFirstKillS`
 - `estimatedPitchRangeDeg`
 - `lastMode`

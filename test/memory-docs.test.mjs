@@ -29,6 +29,7 @@ test("memory doc writes are idempotent and preserve manual sections", async () =
     sessionSummary: {
       acquisitionMet: true,
       baselineMet: false,
+      learningPhase: "bootstrap_kill",
       rejections: [{ reason: "candidate regressed meanSurvivalTimeS during kill-bootstrap" }],
       promotions: [{ reason: "candidate improved episodesWithHit during hit-bootstrap" }]
     },
@@ -42,8 +43,9 @@ test("memory doc writes are idempotent and preserve manual sections", async () =
       learningEnabled: true
     },
     semanticMemory: {
-      version: 1,
-      notes: [{ text: "Pitch sweep improved acquisition." }]
+      version: 2,
+      notes: [{ text: "Pitch sweep improved acquisition." }],
+      contactSignals: [{ summary: "Wide pitch ladder produced the earliest hit." }]
     },
     experimentQueue: ["Hold briefly after enemy-hit."],
     knownConstraints: ["Runtime wrappers stay locked by default."]
@@ -59,5 +61,7 @@ test("memory doc writes are idempotent and preserve manual sections", async () =
   assert.equal(selfLearningText.match(/<!-- SELF_LEARNING_GENERATED:BEGIN -->/g)?.length ?? 0, 1);
   assert.match(memoryText, /## Manual notes/);
   assert.match(memoryText, /keep me/);
+  assert.match(memoryText, /baseline milestone/);
   assert.match(selfLearningText, /preserve me/);
+  assert.match(selfLearningText, /Wide pitch ladder produced the earliest hit/);
 });

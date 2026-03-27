@@ -19,6 +19,9 @@ Focus on:
 
 - `pitchSweepAmplitudeDeg`
 - `pitchSweepPeriodTicks`
+- `microScanTicks`
+- `microScanYawDeg`
+- `microScanPitchDeg`
 - `settleTicks`
 - `fireBurstLengthTicks`
 - `fireBurstCooldownTicks`
@@ -32,6 +35,8 @@ These control vertical acquisition, settle windows, and spam reduction.
 Focus on:
 
 - `engageHoldTicks`
+- `engageBurstLengthTicks`
+- `engageBurstCooldownTicks`
 - `panicTurnDeg`
 - `panicPitchNudgeDeg`
 - `damagePauseTicks`
@@ -44,7 +49,10 @@ These control conversion, damage recovery, and follow-up stability.
 For bootstrap:
 
 - `BASELINE_DEATHS=5`
-- `CANDIDATE_DEATHS=5`
+- `CANDIDATE_SCREEN_DEATHS=2`
+- `CANDIDATE_DEATHS=6`
+- `BOOTSTRAP_CATALOG_SIZE=6`
+- `BOOTSTRAP_CONFIRM_COUNT=2`
 
 For longer score optimization:
 

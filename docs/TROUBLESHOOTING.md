@@ -127,14 +127,17 @@ Use this order.
 1. Inspect whether the agent got **any hits** in the first 5 completed attempts.
 2. If there were zero hits:
    - do **not** just raise `ATTEMPT_BUDGET`
+   - inspect the bootstrap catalog results before mutating blindly
    - move to policy-level acquisition fixes in `src/policies/**`
-   - verify pitch scan is active
-   - verify settle windows and fire cooldowns are reducing spam
+   - verify low / mid / high pitch-band scanning is active
+   - verify probe bursts and cooldowns are reducing spam
+   - verify damage-driven micro-scan is visible in telemetry
    - verify `feedback.recentEvents` is consumed when present
 3. If there were hits but zero kills:
    - extend engage hold
+   - inspect engage burst length / cooldown
    - slow movement while firing
-   - inspect reload timing and panic recovery
+   - inspect reload timing and damage reacquisition timing
 4. Only after that should you widen budgets or exploration scale.
 
 Inspect these artifacts before editing code:
@@ -142,6 +145,15 @@ Inspect these artifacts before editing code:
 - `output/self-improving-runner/episodes.jsonl`
 - `output/self-improving-runner/candidate-summaries/*.json`
 - `output/self-improving-runner/latest-session-summary.json`
+
+Useful telemetry to inspect first:
+
+- `timeToFirstHitS`
+- `timeToFirstKillS`
+- `controllerTelemetry.pitchBandVisits`
+- `controllerTelemetry.modeTicks`
+- `controllerTelemetry.recentEventCounts`
+- `controllerTelemetry.damageReactionCount`
 
 ## Evaluation hangs
 

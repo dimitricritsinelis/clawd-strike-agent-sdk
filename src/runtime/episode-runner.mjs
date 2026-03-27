@@ -13,11 +13,15 @@ export function createEpisodeRecord(policyEntry, episodeIndex, observation, cont
   const summary = observation?.lastRunSummary ?? {};
   const bestScore = Number(summary.bestScore ?? observation?.score?.best ?? 0);
   const finalScore = Number(summary.finalScore ?? observation?.score?.lastRun ?? 0);
+  const telemetry = controllerTelemetry && typeof controllerTelemetry === "object"
+    ? controllerTelemetry
+    : null;
 
   return {
     candidateId: policyEntry.id,
     candidateLabel: policyEntry.label,
     parentId: policyEntry.parentId ?? null,
+    learningPhase: policyEntry.learningPhase ?? null,
     policyFamily: policyEntry.policy?.family ?? null,
     recordedAt: new Date().toISOString(),
     episodeIndex,
@@ -29,12 +33,15 @@ export function createEpisodeRecord(policyEntry, episodeIndex, observation, cont
     shotsFired: Number(summary.shotsFired ?? 0),
     shotsHit: Number(summary.shotsHit ?? 0),
     accuracy: Number(summary.accuracy ?? 0),
+    hitPositive: Number(summary.shotsHit ?? 0) > 0,
+    killPositive: Number(summary.kills ?? 0) > 0,
+    timeToFirstDamageS: telemetry?.timeToFirstDamageS ?? null,
+    timeToFirstHitS: telemetry?.timeToFirstHitS ?? null,
+    timeToFirstKillS: telemetry?.timeToFirstKillS ?? null,
     deathCause: summary.deathCause ?? "unknown",
     lastRun: observation?.score?.lastRun ?? null,
     localBestImproved: finalScore > 0 && finalScore >= bestScore,
-    controllerTelemetry: controllerTelemetry && typeof controllerTelemetry === "object"
-      ? controllerTelemetry
-      : null
+    controllerTelemetry: telemetry
   };
 }
 
