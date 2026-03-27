@@ -4,32 +4,30 @@ Curated durable lessons across runs. Keep this focused on heuristics that surviv
 
 <!-- SELF_LEARNING_GENERATED:BEGIN -->
 ## Stable heuristics that work
-
-- No stable heuristics have been promoted yet.
+- None yet.
 
 ## Recurring failure patterns
-
-- No recurring failure patterns recorded yet.
+- candidate tied champion in a zero-contact bootstrap_hit batch (4)
 
 ## Experiments that failed
-
-- No failed experiment patterns recorded yet.
+- candidate tied champion in a zero-contact bootstrap_hit batch (4)
 
 ## Experiments that improved performance
-
-- No promoted experiment patterns recorded yet.
+- None yet.
 <!-- SELF_LEARNING_GENERATED:END -->
 
 ## Promotion rules
 
 - Promote only on batch evidence.
-- In hit bootstrap, prefer real hits over survival-only zero-hit behavior.
-- In kill bootstrap, prefer real kills over hit-only survival gains.
-- In score optimization, use the kill -> score -> survival -> accuracy ladder.
+- In `bootstrap_hit`, prefer real hits over survival-only zero-contact behavior.
+- In `bootstrap_kill`, prefer real kills over hit-only survival gains.
+- In `stabilize_score`, use the kill -> score -> hit quality -> survival ladder.
+- If both candidate and champion are zero-hit and zero-kill, treat the batch as no promotion.
 
 ## Stagnation protocol
 
 - If repeated batches fail to promote, widen mutation scale modestly.
+- Re-screen the bootstrap catalog before widening mutation too far.
 - Try a hall-of-fame parent before changing controller family.
 - Escalate from config edits to policy-code edits only after bounded config search stalls.
 

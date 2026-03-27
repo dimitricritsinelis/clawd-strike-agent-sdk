@@ -4,6 +4,7 @@ export * from "./runtime/browser.mjs";
 export * from "./runtime/episode-runner.mjs";
 export * from "./policies/index.mjs";
 export * from "./learn/optimizer.mjs";
+export * from "./learn/phases.mjs";
 export * from "./learn/storage.mjs";
 export * from "./learn/memory-docs.mjs";
 export * from "./utils/fs.mjs";

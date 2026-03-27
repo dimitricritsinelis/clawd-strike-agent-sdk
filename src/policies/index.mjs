@@ -3,3 +3,4 @@ export {
   normalizeAdaptiveSweeperPolicy,
   createAdaptiveSweeperController
 } from "./adaptive-sweeper.mjs";
+export { createBootstrapCatalog } from "./bootstrap-catalog.mjs";

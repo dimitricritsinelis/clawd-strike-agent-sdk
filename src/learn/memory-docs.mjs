@@ -1,5 +1,6 @@
 import path from "node:path";
 import { readTextIfExists, writeText } from "../utils/fs.mjs";
+import { LEARNING_PHASES, normalizeLearningPhase } from "./phases.mjs";
 
 const MEMORY_MARKERS = Object.freeze({
   start: "<!-- MEMORY_GENERATED:BEGIN -->",
@@ -76,15 +77,15 @@ function summarizeRejectionPatterns(rejections) {
 }
 
 function deriveActiveHypothesis(sessionSummary) {
-  if (sessionSummary?.baselineMet) {
-    return "Optimize score consistency without widening the fairness surface.";
+  switch (normalizeLearningPhase(sessionSummary?.learningPhase ?? sessionSummary?.targetMode)) {
+    case LEARNING_PHASES.STABILIZE_SCORE:
+      return "Optimize kill-positive consistency and score conversion without widening the fairness surface.";
+    case LEARNING_PHASES.BOOTSTRAP_KILL:
+      return "Convert first-hit acquisition into a repeatable first-kill batch inside the 5-attempt baseline.";
+    case LEARNING_PHASES.BOOTSTRAP_HIT:
+    default:
+      return "Bootstrap the first hit with pitch-band scanning, probe bursts, and damage-driven micro-scans.";
   }
-
-  if (sessionSummary?.acquisitionMet) {
-    return "Convert first-hit acquisition into a repeatable first-kill batch.";
-  }
-
-  return "Bootstrap the first hit with bounded pitch sweep, settle windows, and fire gating.";
 }
 
 export async function writeLearningMemoryDocs(projectRoot, payload) {
@@ -108,12 +109,14 @@ export async function writeLearningMemoryDocs(projectRoot, payload) {
     ? [
         `id: \`${championEntry.id}\``,
         `label: \`${championEntry.label}\``,
+        `learning phase: \`${championEntry.aggregate.learningPhase}\``,
         `hit-positive episodes: \`${championEntry.aggregate.episodesWithHit}\``,
         `kill-positive episodes: \`${championEntry.aggregate.episodesWithKill}\``,
         `total hits: \`${championEntry.aggregate.totalShotsHit}\``,
         `total kills: \`${championEntry.aggregate.totalKills}\``,
         `best score: \`${championEntry.aggregate.bestScore}\``,
-        `mean survival: \`${championEntry.aggregate.meanSurvivalTimeS}\``
+        `mean survival: \`${championEntry.aggregate.meanSurvivalTimeS}\``,
+        `baseline milestone: \`${championEntry.aggregate.baselineMet ? "1 kill within 5 attempts met" : "still below 1 kill within 5 attempts"}\``
       ]
     : ["No champion has been recorded yet."];
 
@@ -147,6 +150,7 @@ export async function writeLearningMemoryDocs(projectRoot, payload) {
     "",
     "## Known constraints / known bugs",
     formatList([
+      "Survival-only zero-contact behavior is not a valid promotion target before first hit or first kill.",
       "Durable learning requires both a persistent browser profile and a persistent workspace.",
       "Only the public runtime contract may be used.",
       ...knownConstraints
@@ -167,7 +171,10 @@ export async function writeLearningMemoryDocs(projectRoot, payload) {
     )
   );
 
-  const stableHeuristics = (semanticMemory?.notes ?? []).slice(-8).map((entry) => entry.text);
+  const stableHeuristics = [
+    ...(semanticMemory?.contactSignals ?? []).slice(-4).map((entry) => entry.summary),
+    ...(semanticMemory?.notes ?? []).slice(-6).map((entry) => entry.text)
+  ];
   const rejectionPatterns = summarizeRejectionPatterns(sessionSummary?.rejections ?? []);
   const improvedExperiments = (sessionSummary?.promotions ?? []).map((promotion) => promotion.reason);
   const selfLearningGenerated = [
@@ -186,7 +193,7 @@ export async function writeLearningMemoryDocs(projectRoot, payload) {
 
   const existingSelfLearning = await readTextIfExists(selfLearningPath, null);
   const selfLearningFallbackPrefix = "# SELF_LEARNING.md\n\nCurated durable lessons across runs. Keep this focused on heuristics that survived real batch comparison.\n\n";
-  const selfLearningFallbackSuffix = "\n\n## Promotion rules\n\n- Promote only on batch evidence.\n- In hit bootstrap, prefer real hits over survival-only zero-hit behavior.\n- In kill bootstrap, prefer real kills over hit-only survival gains.\n- In score optimization, use the kill -> score -> survival -> accuracy ladder.\n\n## Stagnation protocol\n\n- If repeated batches fail to promote, widen mutation scale modestly.\n- Try a hall-of-fame parent before changing controller family.\n- Escalate from config edits to policy-code edits only after bounded config search stalls.\n\n## Escalation rule\n\n- Config and memory first.\n- `src/policies/**` second.\n- Runtime wrappers and contract files only with explicit human review.\n";
+  const selfLearningFallbackSuffix = "\n\n## Promotion rules\n\n- Promote only on batch evidence.\n- In `bootstrap_hit`, prefer real hits over survival-only zero-contact behavior.\n- In `bootstrap_kill`, prefer real kills over hit-only survival gains.\n- In `stabilize_score`, use the kill -> score -> hit quality -> survival ladder.\n\n## Stagnation protocol\n\n- If repeated batches fail to promote, widen mutation scale modestly.\n- Re-screen the bootstrap catalog before widening mutation too far.\n- Try a hall-of-fame parent before changing controller family.\n- Escalate from config edits to policy-code edits only after bounded config search stalls.\n\n## Escalation rule\n\n- Config and memory first.\n- `src/policies/**` second.\n- Runtime wrappers and contract files only with explicit human review.\n";
   await writeText(
     selfLearningPath,
     injectGeneratedBlock(

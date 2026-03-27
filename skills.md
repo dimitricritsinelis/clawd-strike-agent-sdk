@@ -51,6 +51,7 @@ Run these commands in this order:
 ```bash
 pnpm install
 pnpm exec playwright install --with-deps chromium
+pnpm contract:check
 pnpm smoke:no-context
 pnpm agent:baseline
 pnpm agent:learn
@@ -132,6 +133,8 @@ You must **not** assume or access:
 - server-only champion logic beyond public results already returned to the client
 
 The challenge is learning from public consequences, not hidden truth.
+
+The default SDK is meant to be a strong public-safe floor, not a turnkey superhuman shortcut.
 
 ## Public gameplay facts
 
@@ -299,6 +302,7 @@ The public payload is intentionally limited:
 - if `feedback` is present, consume it as public-safe combat feedback
 - deduplicate repeated feedback events by `id`
 - if `feedback` is absent, infer changes from `health`, `ammo`, `score.current`, `score.lastRun`, and `lastRunSummary`
+- when `feedback.recentEvents` exists, use it to tighten engage holds, trigger damage-driven micro-scans, and adjust burst discipline without assuming any private semantics
 
 ### This contract does not expose
 
@@ -389,19 +393,19 @@ If each attempt starts from a fresh browser context and a fresh filesystem, only
 
 Use these stages in order.
 
-#### Stage 1: acquisition bootstrap
+#### Stage 1: `bootstrap_hit`
 
 First prove the controller can land a real shot:
 
 - target: at least `1` hit within the first `5` completed attempts
 
-#### Stage 2: kill bootstrap
+#### Stage 2: `bootstrap_kill`
 
 Then prove the controller can convert acquisition into combat success:
 
 - target: at least `1` kill within the first `5` completed attempts
 
-#### Stage 3: score optimization
+#### Stage 3: `stabilize_score`
 
 Only after the first-kill baseline is met should the agent optimize for:
 
@@ -421,22 +425,19 @@ Recommended stage-aware lexicographic comparison:
 
 1. more episodes with at least one hit
 2. more total shots hit
-3. more episodes with at least one kill
-4. more total kills
-5. higher best score
-6. higher mean survival time
-7. higher accuracy, only when shot volume is comparable
+3. meaningful hit rate
+4. earlier time to first hit
+5. only then weak score / survival tie-breaks
 
 #### If the current champion has hits but zero kills
 
 1. more episodes with at least one kill
 2. more total kills
-3. more episodes with at least one hit
-4. more total shots hit
-5. higher best score
-6. higher median score
-7. higher mean survival time
-8. higher accuracy, only when shot volume is comparable
+3. higher best score
+4. higher median score
+5. more total shots hit
+6. higher hit rate
+7. only then survival and stability
 
 #### After the first-kill baseline is met
 
@@ -444,10 +445,12 @@ Recommended stage-aware lexicographic comparison:
 2. more total kills
 3. higher best score
 4. higher median score
-5. higher mean survival time
-6. higher accuracy, only when shot volume is comparable
+5. more total hits / hit rate
+6. higher mean survival time
+7. higher accuracy, only when shot volume is comparable
 
 Do not let raw survival improvement dominate a zero-hit policy.
+If both candidate and champion remain zero-hit and zero-kill, that is a no-promotion tie, not progress.
 
 ### What to tune first
 
@@ -464,6 +467,9 @@ Good things to tune:
 - settle window duration
 - fire-window length
 - fire-window cooldown
+- engage-burst length
+- engage-burst cooldown
+- damage micro-scan width and hold
 - reload threshold
 - panic turn magnitude after taking damage
 - whether to reverse strafe direction after damage
@@ -507,6 +513,8 @@ Recommended supporting artifacts:
 - `output/self-improving-runner/resolved-run-config.json`
 - `MEMORY.md`
 - `SELF_LEARNING.md`
+
+Candidate summary ids should be unique across repeated sessions and old summaries must never be overwritten.
 
 If the required four learning artifacts do not exist after `pnpm agent:learn`, the run should not be described as durable self-improvement.
 

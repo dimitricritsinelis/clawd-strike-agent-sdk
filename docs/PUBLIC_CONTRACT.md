@@ -123,7 +123,7 @@ When dead:
 
 ## Hidden-tab guidance
 
-- visible tabs can run around `6-10Hz`
+- visible tabs can run around `6-10Hz` and the starter defaults near `125ms` per step
 - hidden or minimized tabs should slow down to around `2Hz`
 - when hidden, prefer coarse stepping such as `await window.advanceTime(500)`
 

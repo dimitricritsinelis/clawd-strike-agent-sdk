@@ -1,5 +1,6 @@
 import path from "node:path";
 import {
+  LEARNING_PHASES,
   aggregateEpisodes,
   attachConsoleRecorder,
   createAdaptiveSweeperController,
@@ -22,6 +23,7 @@ const policyEntry = {
   id: 0,
   label: "baseline",
   parentId: null,
+  learningPhase: LEARNING_PHASES.BOOTSTRAP_HIT,
   policy
 };
 
@@ -47,7 +49,10 @@ try {
     agentName: `${config.agentName}-Baseline`
   });
 
-  const controller = createAdaptiveSweeperController(policy);
+  const controller = createAdaptiveSweeperController(policy, {
+    learningPhase: LEARNING_PHASES.BOOTSTRAP_HIT,
+    stepMs: config.stepMs
+  });
   const evaluation = await runPolicyEpisodes({
     page,
     controller,
