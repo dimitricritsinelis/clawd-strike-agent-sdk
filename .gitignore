@@ -1,6 +1,8 @@
 node_modules/
 .pnpm-store/
 .agent-profile/
+.agent-profile-maintainer-quick/
+.DS_Store
 playwright-report/
 test-results/
 

@@ -7,9 +7,9 @@ import {
   collectEpisodeTimingIssues,
   evaluateStarterBenchmark,
   sanitizeEpisodeTimings,
-  validateLearningOutputs,
-  writeJson
-} from "../src/index.mjs";
+  validateLearningOutputs
+} from "../src/learn/run-validation.mjs";
+import { writeJson } from "../src/utils/fs.mjs";
 
 test("sanitizeEpisodeTimings drops impossible time-to-first values", () => {
   const episode = sanitizeEpisodeTimings({

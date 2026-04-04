@@ -12,6 +12,17 @@ pnpm agent:run
 
 This runs `contract:check`, `smoke:no-context`, `agent:baseline`, and `agent:learn` in order, resets the managed output dirs first, and exits nonzero if the required learning artifacts are missing or the starter benchmark target is not met.
 
+### Repo-only maintainer helpers
+
+Maintainer-only iteration commands live outside the public SDK contract:
+
+```bash
+pnpm dev:fresh-agent
+pnpm dev:quick-run
+```
+
+See `devtools/docs/MAINTAINER_TESTING.md` for their intended use.
+
 ### `pnpm install` fails
 
 - verify Node `20+`

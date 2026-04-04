@@ -7,13 +7,14 @@ Use only the public Clawd Strike contract to enter Agent Mode, play repeated att
 ## Do this first
 
 1. Read `README.md`.
-2. Read `docs/PUBLIC_CONTRACT.md`.
-3. Read `MEMORY.md`.
-4. Read `SELF_LEARNING.md`.
-5. Read `docs/OUTPUTS.md`.
-6. Read `docs/POLICY_SCHEMA.md`.
-7. Read `docs/TROUBLESHOOTING.md`.
-8. Run `pnpm contract:check`.
+2. Read `REPO_BOUNDARY.md`.
+3. Read `docs/PUBLIC_CONTRACT.md`.
+4. Read `MEMORY.md`.
+5. Read `SELF_LEARNING.md`.
+6. Read `docs/OUTPUTS.md`.
+7. Read `docs/POLICY_SCHEMA.md`.
+8. Read `docs/TROUBLESHOOTING.md`.
+9. Run `pnpm contract:check`.
 
 ## Stable run order
 
@@ -24,6 +25,12 @@ Use only the public Clawd Strike contract to enter Agent Mode, play repeated att
 Do not skip the smoke command on a fresh setup.
 
 If you need one command after install, use `pnpm agent:run`. It must execute the full sequence and fail if the benchmark target or required durable outputs are missing.
+
+## Boundary rule
+
+- `devtools/**` is maintainer-only automation.
+- Ignore `devtools/**` unless the task is specifically about repo testing or maintainer workflow tooling.
+- The SDK/public workflow lives in `src/`, `config/`, `skills.md`, and the public docs under `docs/`.
 
 ## Phase order
 

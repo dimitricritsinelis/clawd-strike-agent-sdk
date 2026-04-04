@@ -1,16 +1,13 @@
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { readdir, rm } from "node:fs/promises";
-import {
-  ensureDir,
-  evaluateStarterBenchmark,
-  fileExists,
-  readLearnSummary,
-  resolveBaselineConfig,
-  resolveLearningRunConfig,
-  validateLearningOutputs,
-  writeText
-} from "../src/index.mjs";
+import { resolveBaselineConfig, resolveLearningRunConfig } from "../src/runtime/config.mjs";
+import { validateLearningOutputs, readLearnSummary, evaluateStarterBenchmark } from "../src/learn/run-validation.mjs";
+import { ensureDir as ensureOutputDir, fileExists as outputFileExists, writeText as writeOutputText } from "../src/utils/fs.mjs";
+
+const ensureDir = ensureOutputDir;
+const fileExists = outputFileExists;
+const writeText = writeOutputText;
 
 const PNPM_BIN = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const REQUIRED_STEPS = Object.freeze([

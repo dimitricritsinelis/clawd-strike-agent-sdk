@@ -12,8 +12,13 @@
     "agent:baseline": "node examples/baseline-loop.mjs",
     "agent:learn": "node examples/self-improving-runner.mjs",
     "agent:run": "node examples/agent-run.mjs",
+    "dev:fresh-agent": "node devtools/scripts/create-fresh-agent-workspace.mjs",
+    "dev:quick-run": "node devtools/examples/agent-quick-run.mjs",
+    "agent:quick": "node devtools/examples/agent-quick.mjs",
+    "agent:quick:run": "pnpm dev:quick-run",
+    "test:fresh-agent": "pnpm dev:fresh-agent",
     "test:unit": "node --test test/*.test.mjs",
-    "ci:check": "pnpm contract:check && pnpm test:unit && node --check examples/no-context-smoke.mjs && node --check examples/baseline-loop.mjs && node --check examples/self-improving-runner.mjs && node --check examples/agent-run.mjs"
+    "ci:check": "pnpm contract:check && pnpm test:unit && node --check examples/no-context-smoke.mjs && node --check examples/baseline-loop.mjs && node --check examples/self-improving-runner.mjs && node --check examples/agent-run.mjs && node --check devtools/examples/agent-quick.mjs && node --check devtools/examples/agent-quick-run.mjs && node --check devtools/scripts/create-fresh-agent-workspace.mjs"
   },
   "repository": {
     "type": "git",

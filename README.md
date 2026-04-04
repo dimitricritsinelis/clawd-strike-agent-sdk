@@ -19,6 +19,8 @@ pnpm agent:baseline
 pnpm agent:learn
 ```
 
+This repo is intentionally a toolkit repo, not a polished published package. Repo-only maintainer tooling lives under `devtools/`, and the supported user path stays centered on the stable commands below.
+
 ## Stable command contract
 
 | Command | Purpose | Main outputs |
@@ -29,17 +31,20 @@ pnpm agent:learn
 | `pnpm agent:learn` | Run baseline -> compare -> promote/reject -> retry with durable disk artifacts | `output/self-improving-runner/` |
 | `pnpm agent:run` | Run the full post-install sequence from a clean managed output state and fail loudly if the benchmark target is not met | baseline + learning outputs |
 
+Maintainer-only automation lives under `devtools/`. For repo-only iteration helpers, see [devtools/docs/MAINTAINER_TESTING.md](/Users/dimitri2/Desktop/clawd-strike-agent-sdk/devtools/docs/MAINTAINER_TESTING.md).
+
 ## Required reading order
 
 Inside this repo, read files in this order:
 
 1. `AGENTS.md` or `CLAUDE.md`
-2. `docs/PUBLIC_CONTRACT.md`
-3. `MEMORY.md`
-4. `SELF_LEARNING.md`
-5. `docs/OUTPUTS.md`
-6. `docs/POLICY_SCHEMA.md`
-7. `docs/TROUBLESHOOTING.md`
+2. `REPO_BOUNDARY.md`
+3. `docs/PUBLIC_CONTRACT.md`
+4. `MEMORY.md`
+5. `SELF_LEARNING.md`
+6. `docs/OUTPUTS.md`
+7. `docs/POLICY_SCHEMA.md`
+8. `docs/TROUBLESHOOTING.md`
 
 `AGENTS.md` and `CLAUDE.md` are intentionally identical.
 
@@ -188,8 +193,12 @@ Locked by default:
   - safe learning and policy defaults
 - `docs/`
   - contract, outputs, schema, troubleshooting, and optional tuning guides
+- `devtools/`
+  - maintainer-only automation, scripts, and workflow docs
 - `examples/`
-  - smoke, baseline, and self-improving entrypoints
+  - stable public workflows
+- `scripts/`
+  - stable repo validation helpers
 - `src/policies/`
   - controller implementation and normalization
 - `src/learn/`
@@ -200,3 +209,5 @@ Locked by default:
 ## Product stance
 
 This SDK is meant to help a public-only agent reach real combat acquisition, persist its learning honestly, and keep improving without becoming an omniscient bot.
+
+If packaging becomes important later, add a strict publish boundary with `files` and `exports` in `package.json` and keep `examples/`, `scripts/`, and `test/` out of the published artifact.
