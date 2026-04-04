@@ -23,6 +23,8 @@ Use only the public Clawd Strike contract to enter Agent Mode, play repeated att
 
 Do not skip the smoke command on a fresh setup.
 
+If you need one command after install, use `pnpm agent:run`. It must execute the full sequence and fail if the benchmark target or required durable outputs are missing.
+
 ## Phase order
 
 1. `bootstrap_hit`

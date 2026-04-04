@@ -4,7 +4,7 @@ Short working memory for the current agent/session. This file is safe to overwri
 
 <!-- MEMORY_GENERATED:BEGIN -->
 ## Current best policy summary
-- id: `learn-20260326t025040089z-822eb8da-seed`
+- id: `learn-20260401t181346018z-f8fbcf30-seed`
 - label: `seed`
 - learning phase: `bootstrap_hit`
 - hit-positive episodes: `0`
@@ -12,7 +12,7 @@ Short working memory for the current agent/session. This file is safe to overwri
 - total hits: `0`
 - total kills: `0`
 - best score: `0`
-- mean survival: `5.92`
+- mean survival: `8.4`
 - baseline milestone: `still below 1 kill within 5 attempts`
 
 ## Active hypothesis
@@ -26,8 +26,8 @@ Short working memory for the current agent/session. This file is safe to overwri
 - modelProvider: `metadata-only`
 - modelName: `adaptive-sweeper`
 - headless: `true`
-- attemptBudget: `54`
-- timeBudgetMinutes: `20`
+- attemptBudget: `5`
+- timeBudgetMinutes: `3`
 - learningEnabled: `true`
 
 ## Current experiment queue

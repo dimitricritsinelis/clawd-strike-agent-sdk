@@ -7,5 +7,6 @@ export * from "./learn/optimizer.mjs";
 export * from "./learn/phases.mjs";
 export * from "./learn/storage.mjs";
 export * from "./learn/memory-docs.mjs";
+export * from "./learn/run-validation.mjs";
 export * from "./utils/fs.mjs";
 export * from "./utils/random.mjs";

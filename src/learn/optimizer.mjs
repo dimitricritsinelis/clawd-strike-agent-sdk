@@ -11,6 +11,7 @@ import {
   normalizeLearningPhase,
   summarizeBaselineStatus
 } from "./phases.mjs";
+import { sanitizeEpisodeTimings } from "./run-validation.mjs";
 import { clamp, createSeededRng, choose } from "../utils/random.mjs";
 
 export { createSeededRng };
@@ -23,6 +24,8 @@ const PARAMETER_FAMILIES = Object.freeze({
     ["fireMoveScale", 0.1],
     ["damageForwardScale", 0.08],
     ["damageStrafeScale", 0.2],
+    ["noContactMoveZ", 0.12],
+    ["noContactStrafeScale", 0.2],
     ["pauseEveryTicks", 14],
     ["pauseDurationTicks", 2]
   ],
@@ -52,7 +55,11 @@ const PARAMETER_FAMILIES = Object.freeze({
     ["panicTicks", 2],
     ["panicPitchNudgeDeg", 0.8],
     ["damagePauseTicks", 1],
-    ["damageScanMultiplier", 0.25]
+    ["damageScanMultiplier", 0.25],
+    ["noContactRecoveryTicks", 2],
+    ["noContactYawDeg", 1.4],
+    ["noContactDamageThreshold", 1],
+    ["noContactReloadThreshold", 1]
   ],
   reload: [
     ["reloadThreshold", 2],
@@ -315,11 +322,6 @@ function compareBootstrapHit(candidate, champion, phase) {
     if (decision) return decision;
   }
 
-  for (const key of ["meanTimeToFirstHitS", "bestTimeToFirstHitS"]) {
-    const decision = compareLowerIsBetter(candidate, champion, phase, key, 0.2);
-    if (decision) return decision;
-  }
-
   for (const [key, minDelta] of [
     ["bestScore", 0],
     ["meanSurvivalTimeS", 0.25]
@@ -368,11 +370,6 @@ function compareBootstrapKill(candidate, champion, phase) {
 
     const hitRateDecision = compareRate(candidate, champion, phase, "hitRate", { threshold: 0.02 });
     if (hitRateDecision) return hitRateDecision;
-
-    for (const key of ["meanTimeToFirstHitS", "bestTimeToFirstHitS"]) {
-      const decision = compareLowerIsBetter(candidate, champion, phase, key, 0.2);
-      if (decision) return decision;
-    }
 
     const scoreDecision = compareHigherIsBetter(candidate, champion, phase, "bestScore", 0);
     if (scoreDecision) return scoreDecision;
@@ -490,7 +487,9 @@ export function createCandidatePolicyRecord(options = {}) {
 }
 
 export function aggregateEpisodes(episodes) {
-  const safeEpisodes = Array.isArray(episodes) ? episodes : [];
+  const safeEpisodes = Array.isArray(episodes)
+    ? episodes.map((episode) => sanitizeEpisodeTimings(episode))
+    : [];
   const totalEpisodes = safeEpisodes.length;
   const totalKills = safeEpisodes.reduce((sum, episode) => sum + Number(episode.kills ?? 0), 0);
   const episodesWithKill = safeEpisodes.filter((episode) => Number(episode.kills ?? 0) > 0).length;
@@ -541,6 +540,10 @@ export function aggregateEpisodes(episodes) {
     (sum, episode) => sum + Number(episode.controllerTelemetry?.damageReactionCount ?? 0),
     0
   );
+  const noContactRecoveryCount = safeEpisodes.reduce(
+    (sum, episode) => sum + Number(episode.controllerTelemetry?.noContactRecoveryCount ?? 0),
+    0
+  );
   const burstCount = safeEpisodes.reduce(
     (sum, episode) => sum + Number(episode.controllerTelemetry?.burstCount ?? 0),
     0
@@ -583,6 +586,7 @@ export function aggregateEpisodes(episodes) {
     modeTicks,
     modeShots,
     damageReactionCount,
+    noContactRecoveryCount,
     burstCount,
     avgBurstLength: burstCount > 0 ? Number((weightedBurstLength / burstCount).toFixed(3)) : 0,
     pitchBandVisits,
@@ -751,6 +755,24 @@ export function mutatePolicy(policy, options = {}) {
         break;
       case "damageScanMultiplier":
         next[key] = jitterNumber(next[key], scaledMagnitude, rng, 1, 3, false);
+        break;
+      case "noContactRecoveryTicks":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0, 24, true);
+        break;
+      case "noContactYawDeg":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 1, 16, false);
+        break;
+      case "noContactDamageThreshold":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 1, 6, true);
+        break;
+      case "noContactReloadThreshold":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 1, 6, true);
+        break;
+      case "noContactMoveZ":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, -0.6, 0.2, false);
+        break;
+      case "noContactStrafeScale":
+        next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0.8, 2.4, false);
         break;
       case "postScoreHoldTicks":
         next[key] = jitterNumber(next[key], scaledMagnitude, rng, 0, 30, true);

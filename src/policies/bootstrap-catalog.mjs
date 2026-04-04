@@ -3,6 +3,65 @@ import { normalizeAdaptiveSweeperPolicy } from "./adaptive-sweeper.mjs";
 
 const HIT_ARCHETYPES = Object.freeze([
   {
+    archetype: "coarse-lane-rotation",
+    label: "lane rotation",
+    overrides: {
+      forwardMove: 0.22,
+      strafeMagnitude: 0.42,
+      strafePeriodTicks: 9,
+      sweepAmplitudeDeg: 4.1,
+      sweepPeriodTicks: 22,
+      pitchSweepAmplitudeDeg: 1.3,
+      pitchSweepPeriodTicks: 16,
+      fireBurstLengthTicks: 1,
+      fireBurstCooldownTicks: 8,
+      noContactRecoveryTicks: 8,
+      noContactYawDeg: 7.5,
+      noContactMoveZ: -0.24,
+      noContactStrafeScale: 1.7
+    }
+  },
+  {
+    archetype: "low-forward-high-strafe",
+    label: "low forward strafe",
+    overrides: {
+      forwardMove: 0.18,
+      strafeMagnitude: 0.58,
+      strafePeriodTicks: 8,
+      sweepAmplitudeDeg: 2.6,
+      sweepPeriodTicks: 14,
+      pitchSweepAmplitudeDeg: 1.7,
+      pitchSweepPeriodTicks: 12,
+      fireMoveScale: 0.22,
+      damageForwardScale: 0.04,
+      damageStrafeScale: 1.95,
+      noContactMoveZ: -0.12,
+      noContactStrafeScale: 1.85
+    }
+  },
+  {
+    archetype: "damage-escape-recenter",
+    label: "damage escape",
+    overrides: {
+      forwardMove: 0.34,
+      strafeMagnitude: 0.34,
+      sweepAmplitudeDeg: 2.1,
+      pitchSweepAmplitudeDeg: 1.8,
+      microScanTicks: 7,
+      microScanYawDeg: 2.3,
+      microScanPitchDeg: 1.3,
+      panicTurnDeg: 12,
+      panicPitchNudgeDeg: 2.4,
+      damageForwardScale: 0,
+      damageStrafeScale: 2,
+      noContactRecoveryTicks: 9,
+      noContactYawDeg: 8.4,
+      noContactDamageThreshold: 1,
+      noContactMoveZ: -0.32,
+      noContactStrafeScale: 1.9
+    }
+  },
+  {
     archetype: "wide-horizontal-pitch-ladder",
     label: "wide ladder",
     overrides: {
@@ -25,7 +84,7 @@ const HIT_ARCHETYPES = Object.freeze([
     archetype: "slow-vertical-explore",
     label: "slow vertical",
     overrides: {
-      forwardMove: 0.4,
+      forwardMove: 0.28,
       strafeMagnitude: 0.2,
       sweepAmplitudeDeg: 1.4,
       sweepPeriodTicks: 24,
@@ -40,7 +99,7 @@ const HIT_ARCHETYPES = Object.freeze([
     archetype: "damage-reactive-hold",
     label: "reactive hold",
     overrides: {
-      forwardMove: 0.44,
+      forwardMove: 0.26,
       strafeMagnitude: 0.3,
       fireMoveScale: 0.28,
       engageHoldTicks: 9,
@@ -55,7 +114,7 @@ const HIT_ARCHETYPES = Object.freeze([
     archetype: "high-strafe-low-forward",
     label: "high strafe",
     overrides: {
-      forwardMove: 0.32,
+      forwardMove: 0.2,
       strafeMagnitude: 0.42,
       strafePeriodTicks: 10,
       sweepAmplitudeDeg: 1.9,
@@ -68,7 +127,7 @@ const HIT_ARCHETYPES = Object.freeze([
     archetype: "disciplined-probe",
     label: "probe burst",
     overrides: {
-      forwardMove: 0.48,
+      forwardMove: 0.24,
       openingNoFireTicks: 2,
       settleTicks: 4,
       fireBurstLengthTicks: 1,
@@ -81,7 +140,7 @@ const HIT_ARCHETYPES = Object.freeze([
     archetype: "tight-micro-scan",
     label: "tight micro-scan",
     overrides: {
-      forwardMove: 0.38,
+      forwardMove: 0.22,
       strafeMagnitude: 0.35,
       sweepAmplitudeDeg: 1.6,
       pitchSweepAmplitudeDeg: 1.2,

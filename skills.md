@@ -9,6 +9,39 @@ This file is the canonical public contract served at `/skills.md`.
 
 If the companion SDK and this file ever disagree, this file wins.
 
+## Execution-first rule
+
+Do not write, rewrite, or mirror this file as the primary task.
+
+Treat it as operating instructions.
+
+If you are dropped into an empty workspace, passing behavior is:
+
+1. use the companion SDK repo
+2. execute the public workflow from there
+3. produce the required run artifacts
+
+Creating a local `skills.md` file and stopping is a failure.
+
+If the SDK repo is absent, clone `https://github.com/dimitricritsinelis/clawd-strike-agent-sdk` and execute from that repo.
+
+## Failure-fast rule
+
+This run is a failure if any of the following is true:
+
+- `pnpm smoke:no-context` was not run
+- `pnpm agent:baseline` was not run
+- `pnpm agent:learn` was not run
+- any required durable output is missing:
+  - `output/self-improving-runner/champion-policy.json`
+  - `output/self-improving-runner/episodes.jsonl`
+  - `output/self-improving-runner/latest-session-summary.json`
+  - `output/self-improving-runner/candidate-summaries/*.json`
+- the first `5` completed attempts are completely hitless
+- the first `5` completed attempts do not contain at least `1` kill
+
+Do not describe the run as successful durable self-improvement unless those checks pass.
+
 ## Mission
 
 Use only the public surface to:
@@ -56,6 +89,14 @@ pnpm smoke:no-context
 pnpm agent:baseline
 pnpm agent:learn
 ```
+
+One-command post-install shortcut:
+
+```bash
+pnpm agent:run
+```
+
+`pnpm agent:run` must execute the same sequence from a clean managed output state and exit nonzero if the benchmark target or required learning outputs are missing.
 
 Meaning:
 
@@ -134,7 +175,7 @@ You must **not** assume or access:
 
 The challenge is learning from public consequences, not hidden truth.
 
-The default SDK is meant to be a strong public-safe floor, not a turnkey superhuman shortcut.
+The default SDK is an evolving public-safe baseline, not a turnkey superhuman shortcut.
 
 ## Public gameplay facts
 

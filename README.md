@@ -7,6 +7,12 @@ Starter kit for browser agents that must bootstrap from public context only, ent
 ```bash
 pnpm install
 pnpm exec playwright install --with-deps chromium
+pnpm agent:run
+```
+
+If you want the individual steps instead of the single-command flow:
+
+```bash
 pnpm contract:check
 pnpm smoke:no-context
 pnpm agent:baseline
@@ -21,6 +27,7 @@ pnpm agent:learn
 | `pnpm smoke:no-context` | Prove a blank agent can launch, observe, die, and retry on the public surface | `output/no-context-smoke/<timestamp>/` |
 | `pnpm agent:baseline` | Run one baseline attempt with the default policy | `output/baseline/` |
 | `pnpm agent:learn` | Run baseline -> compare -> promote/reject -> retry with durable disk artifacts | `output/self-improving-runner/` |
+| `pnpm agent:run` | Run the full post-install sequence from a clean managed output state and fail loudly if the benchmark target is not met | baseline + learning outputs |
 
 ## Required reading order
 
@@ -44,7 +51,7 @@ The default learner is explicitly phase-aware:
 2. `bootstrap_kill`
 3. `stabilize_score`
 
-Before the first hit, the SDK optimizes for acquisition, not survival. Before the first kill, it optimizes for conversion, not cosmetic scoreless longevity. `baselineMet` means the public starter got at least `1` kill within `5` completed attempts.
+Before the first hit, the SDK optimizes for acquisition, not survival. Before the first kill, it optimizes for conversion, not cosmetic scoreless longevity. `baselineMet` records whether a run achieved at least `1` kill within `5` completed attempts. The current starter should be treated as an evolving baseline, not a proven benchmark winner, until repeated benchmark runs pass.
 
 ## Run config
 
@@ -99,6 +106,8 @@ Supporting artifacts:
 - `SELF_LEARNING.md`
 
 If the required four learning artifacts are missing, the run is not durable self-improvement.
+
+`pnpm agent:run` also treats a benchmark miss as a failure, even if the artifact contract is satisfied.
 
 Candidate summary ids are session-scoped and unique across repeated runs. Existing summaries are never overwritten because candidate summaries are written with exclusive create semantics.
 

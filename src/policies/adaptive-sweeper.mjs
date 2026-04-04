@@ -4,6 +4,7 @@ const MODE_NAMES = Object.freeze([
   "opening",
   "acquire",
   "micro_scan",
+  "reorient",
   "engage",
   "panic",
   "recover"
@@ -64,6 +65,7 @@ function createZeroModeMap() {
     opening: 0,
     acquire: 0,
     micro_scan: 0,
+    reorient: 0,
     engage: 0,
     panic: 0,
     recover: 0
@@ -87,6 +89,7 @@ function createEmptyTelemetry(learningPhase) {
     killEventsObserved: 0,
     damageEventsObserved: 0,
     damageReactionCount: 0,
+    noContactRecoveryCount: 0,
     ticksInEngageMode: 0,
     ticksInPanicMode: 0,
     estimatedPitchRangeDeg: 0,
@@ -117,6 +120,7 @@ function copyTelemetry(telemetry) {
     killEventsObserved: Number(telemetry.killEventsObserved ?? 0),
     damageEventsObserved: Number(telemetry.damageEventsObserved ?? 0),
     damageReactionCount: Number(telemetry.damageReactionCount ?? 0),
+    noContactRecoveryCount: Number(telemetry.noContactRecoveryCount ?? 0),
     ticksInEngageMode: Number(telemetry.ticksInEngageMode ?? 0),
     ticksInPanicMode: Number(telemetry.ticksInPanicMode ?? 0),
     estimatedPitchRangeDeg: Number(telemetry.estimatedPitchRangeDeg ?? 0),
@@ -167,32 +171,38 @@ function normalizeEventType(rawType) {
 export const DEFAULT_ADAPTIVE_SWEEPER_POLICY = Object.freeze({
   family: "adaptive-sweeper",
   version: 3,
-  forwardMove: 0.58,
-  strafeMagnitude: 0.3,
-  strafePeriodTicks: 14,
-  sweepAmplitudeDeg: 1.85,
-  sweepPeriodTicks: 16,
-  pitchSweepAmplitudeDeg: 1.55,
-  pitchSweepPeriodTicks: 14,
+  forwardMove: 0.44,
+  strafeMagnitude: 0.36,
+  strafePeriodTicks: 12,
+  sweepAmplitudeDeg: 2.25,
+  sweepPeriodTicks: 14,
+  pitchSweepAmplitudeDeg: 1.9,
+  pitchSweepPeriodTicks: 12,
   openingNoFireTicks: 2,
   settleTicks: 2,
   fireBurstLengthTicks: 1,
-  fireBurstCooldownTicks: 5,
+  fireBurstCooldownTicks: 6,
   engageBurstLengthTicks: 4,
   engageBurstCooldownTicks: 1,
-  fireMoveScale: 0.28,
+  fireMoveScale: 0.24,
   engageHoldTicks: 8,
   reloadThreshold: 4,
-  panicTurnDeg: 7.5,
+  panicTurnDeg: 9.5,
   panicTicks: 5,
-  panicPitchNudgeDeg: 1.7,
+  panicPitchNudgeDeg: 1.9,
   damagePauseTicks: 1,
-  microScanTicks: 4,
-  microScanYawDeg: 1.35,
-  microScanPitchDeg: 0.8,
-  damageScanMultiplier: 1.8,
-  damageForwardScale: 0.14,
-  damageStrafeScale: 1.6,
+  microScanTicks: 5,
+  microScanYawDeg: 1.85,
+  microScanPitchDeg: 1.05,
+  damageScanMultiplier: 2,
+  damageForwardScale: 0.08,
+  damageStrafeScale: 1.85,
+  noContactRecoveryTicks: 6,
+  noContactYawDeg: 5.6,
+  noContactDamageThreshold: 2,
+  noContactReloadThreshold: 2,
+  noContactMoveZ: -0.18,
+  noContactStrafeScale: 1.45,
   crouchEveryTicks: 0,
   pauseEveryTicks: 0,
   pauseDurationTicks: 0,
@@ -232,6 +242,12 @@ export function normalizeAdaptiveSweeperPolicy(policy = {}) {
     damageScanMultiplier: sanitizeNumber(source.damageScanMultiplier, 1.8, 1, 3),
     damageForwardScale: sanitizeNumber(source.damageForwardScale, 0.14, 0, 0.6),
     damageStrafeScale: sanitizeNumber(source.damageStrafeScale, 1.6, 0.8, 2),
+    noContactRecoveryTicks: sanitizeInteger(source.noContactRecoveryTicks, 6, 0, 24),
+    noContactYawDeg: sanitizeNumber(source.noContactYawDeg, 5.6, 1, 16),
+    noContactDamageThreshold: sanitizeInteger(source.noContactDamageThreshold, 2, 1, 6),
+    noContactReloadThreshold: sanitizeInteger(source.noContactReloadThreshold, 2, 1, 6),
+    noContactMoveZ: sanitizeNumber(source.noContactMoveZ, -0.18, -0.6, 0.2),
+    noContactStrafeScale: sanitizeNumber(source.noContactStrafeScale, 1.45, 0.8, 2.4),
     crouchEveryTicks: sanitizeInteger(source.crouchEveryTicks, 0, 0, 120),
     pauseEveryTicks: sanitizeInteger(source.pauseEveryTicks, 0, 0, 120),
     pauseDurationTicks: sanitizeInteger(source.pauseDurationTicks, 0, 0, 12),
@@ -260,6 +276,7 @@ export function createAdaptiveSweeperController(policy, options = {}) {
     postScoreHoldRemaining: 0,
     damagePauseRemaining: 0,
     microScanRemaining: 0,
+    noContactRecoveryRemaining: 0,
     damageWindowRemaining: 0,
     hitWindowRemaining: 0,
     strafeSign: 1,
@@ -274,6 +291,9 @@ export function createAdaptiveSweeperController(policy, options = {}) {
     currentBurstMode: null,
     totalBurstTicks: 0,
     microScanDirection: 1,
+    noContactDamageCount: 0,
+    noContactReloadCount: 0,
+    noContactTurnSign: 1,
     seenEventIds: new Set(),
     seenEventOrder: [],
     recentEvents: [],
@@ -296,6 +316,7 @@ export function createAdaptiveSweeperController(policy, options = {}) {
     memory.postScoreHoldRemaining = 0;
     memory.damagePauseRemaining = 0;
     memory.microScanRemaining = 0;
+    memory.noContactRecoveryRemaining = 0;
     memory.damageWindowRemaining = 0;
     memory.hitWindowRemaining = 0;
     memory.strafeSign = 1;
@@ -310,6 +331,9 @@ export function createAdaptiveSweeperController(policy, options = {}) {
     memory.currentBurstMode = null;
     memory.totalBurstTicks = 0;
     memory.microScanDirection = 1;
+    memory.noContactDamageCount = 0;
+    memory.noContactReloadCount = 0;
+    memory.noContactTurnSign = 1;
     memory.seenEventIds.clear();
     memory.seenEventOrder = [];
     memory.recentEvents = [];
@@ -513,6 +537,26 @@ export function createAdaptiveSweeperController(policy, options = {}) {
     markFirstTiming("timeToFirstDamageS");
   }
 
+  function startNoContactRecovery(reason = "damage") {
+    if (p.noContactRecoveryTicks <= 0) {
+      return;
+    }
+
+    memory.noContactDamageCount = 0;
+    memory.noContactReloadCount = 0;
+    memory.noContactRecoveryRemaining = Math.max(
+      memory.noContactRecoveryRemaining,
+      p.noContactRecoveryTicks
+    );
+    memory.noContactTurnSign = reason === "reload"
+      ? memory.sweepDirection
+      : -memory.strafeSign;
+    memory.telemetry.noContactRecoveryCount += 1;
+    memory.recoverRemaining = Math.max(memory.recoverRemaining, 2);
+    advancePitchBand();
+    flipSweepDirection(memory.noContactTurnSign);
+  }
+
   function processFeedbackEvents(state) {
     const events = getNewFeedbackEvents(state);
     const observed = {
@@ -529,10 +573,19 @@ export function createAdaptiveSweeperController(policy, options = {}) {
           memory.telemetry.damageEventsObserved += 1;
           observed.damage = true;
           applyDamageReaction();
+          if (memory.telemetry.enemyHitEventsObserved === 0 && memory.telemetry.killEventsObserved === 0) {
+            memory.noContactDamageCount += 1;
+            if (memory.noContactDamageCount >= p.noContactDamageThreshold) {
+              startNoContactRecovery("damage");
+            }
+          }
           break;
         case "enemy-hit":
           memory.telemetry.enemyHitEventsObserved += 1;
           observed.hit = true;
+          memory.noContactDamageCount = 0;
+          memory.noContactReloadCount = 0;
+          memory.noContactRecoveryRemaining = 0;
           memory.engageRemaining = Math.max(
             memory.engageRemaining,
             Math.round(p.engageHoldTicks * phaseScale.engageHold)
@@ -544,6 +597,9 @@ export function createAdaptiveSweeperController(policy, options = {}) {
         case "kill":
           memory.telemetry.killEventsObserved += 1;
           observed.kill = true;
+          memory.noContactDamageCount = 0;
+          memory.noContactReloadCount = 0;
+          memory.noContactRecoveryRemaining = 0;
           memory.engageRemaining = Math.max(
             memory.engageRemaining,
             Math.round((p.engageHoldTicks + 1) * phaseScale.engageHold)
@@ -553,6 +609,12 @@ export function createAdaptiveSweeperController(policy, options = {}) {
           markFirstTiming("timeToFirstKillS");
           break;
         case "reload-start":
+          if (memory.telemetry.enemyHitEventsObserved === 0 && memory.telemetry.killEventsObserved === 0) {
+            memory.noContactReloadCount += 1;
+            if (memory.noContactReloadCount >= p.noContactReloadThreshold) {
+              startNoContactRecovery("reload");
+            }
+          }
           memory.recoverRemaining = Math.max(memory.recoverRemaining, 2);
           memory.burstActiveRemaining = 0;
           memory.burstCooldownRemaining = 1;
@@ -622,6 +684,12 @@ export function createAdaptiveSweeperController(policy, options = {}) {
       memory.telemetry.damageEventsObserved += 1;
       pushRecentEvent("damage-taken");
       applyDamageReaction();
+      if (memory.telemetry.enemyHitEventsObserved === 0 && memory.telemetry.killEventsObserved === 0) {
+        memory.noContactDamageCount += 1;
+        if (memory.noContactDamageCount >= p.noContactDamageThreshold) {
+          startNoContactRecovery("damage");
+        }
+      }
     }
 
     if (currentScore > memory.lastScore) {
@@ -633,6 +701,9 @@ export function createAdaptiveSweeperController(policy, options = {}) {
         memory.engageRemaining,
         Math.round((p.engageHoldTicks + 1) * phaseScale.engageHold)
       );
+      memory.noContactDamageCount = 0;
+      memory.noContactReloadCount = 0;
+      memory.noContactRecoveryRemaining = 0;
       memory.postScoreHoldRemaining = Math.max(memory.postScoreHoldRemaining, p.postScoreHoldTicks);
       memory.hitWindowRemaining = Math.max(memory.hitWindowRemaining, 8);
     }
@@ -653,8 +724,10 @@ export function createAdaptiveSweeperController(policy, options = {}) {
     const inOpening = memory.tickIndex <= p.openingNoFireTicks;
     const inPanic = !inOpening && memory.panicRemaining > 0;
     const inMicroScan = !inOpening && !inPanic && memory.microScanRemaining > 0;
-    const inEngage = !inOpening && !inPanic && !inMicroScan && (memory.engageRemaining > 0 || recentHit || recentKill);
-    const inRecover = !inOpening && !inPanic && !inMicroScan && !inEngage
+    const inReorient = !inOpening && !inPanic && !inMicroScan && memory.noContactRecoveryRemaining > 0;
+    const inEngage = !inOpening && !inPanic && !inMicroScan && !inReorient
+      && (memory.engageRemaining > 0 || recentHit || recentKill);
+    const inRecover = !inOpening && !inPanic && !inMicroScan && !inReorient && !inEngage
       && (memory.recoverRemaining > 0 || memory.postScoreHoldRemaining > 0 || recentReload);
 
     let mode = "acquire";
@@ -664,6 +737,8 @@ export function createAdaptiveSweeperController(policy, options = {}) {
       mode = "panic";
     } else if (inMicroScan) {
       mode = "micro_scan";
+    } else if (inReorient) {
+      mode = "reorient";
     } else if (inEngage) {
       mode = "engage";
     } else if (inRecover) {
@@ -739,6 +814,17 @@ export function createAdaptiveSweeperController(policy, options = {}) {
         );
         memory.microScanDirection *= -1;
         break;
+      case "reorient":
+        moveX *= Math.max(1.1, p.noContactStrafeScale);
+        moveZ = p.noContactMoveZ;
+        lookYawDelta = p.noContactYawDeg * memory.noContactTurnSign;
+        lookPitchDelta = clamp(
+          recenterPitchDelta(0.7, Math.max(0.8, p.pitchSweepAmplitudeDeg))
+            + (nextAcquirePitchDelta(p.pitchSweepAmplitudeDeg * 0.5, { narrow: true }) * 0.25),
+          -1.6,
+          1.6
+        );
+        break;
       default:
         break;
     }
@@ -756,7 +842,7 @@ export function createAdaptiveSweeperController(policy, options = {}) {
             (p.engageBurstLengthTicks + (recentHit ? 1 : 0) + (recentKill ? 1 : 0)) * phaseScale.engageBurst,
             Math.max(0, p.engageBurstCooldownTicks - (recentHit || recentDamage ? 1 : 0))
           );
-        } else if (mode === "micro_scan" || mode === "panic") {
+        } else if (mode === "micro_scan" || mode === "panic" || mode === "reorient") {
           fire = nextBurstFire(
             mode,
             Math.max(p.fireBurstLengthTicks + 1, p.engageBurstLengthTicks - 1),
@@ -811,6 +897,9 @@ export function createAdaptiveSweeperController(policy, options = {}) {
     }
     if (memory.microScanRemaining > 0) {
       memory.microScanRemaining -= 1;
+    }
+    if (mode === "reorient" && memory.noContactRecoveryRemaining > 0) {
+      memory.noContactRecoveryRemaining -= 1;
     }
     if (memory.damageWindowRemaining > 0) {
       memory.damageWindowRemaining -= 1;

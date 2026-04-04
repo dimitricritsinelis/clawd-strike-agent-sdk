@@ -2,6 +2,16 @@
 
 ## Install failures
 
+### One-command run
+
+After install, you can use:
+
+```bash
+pnpm agent:run
+```
+
+This runs `contract:check`, `smoke:no-context`, `agent:baseline`, and `agent:learn` in order, resets the managed output dirs first, and exits nonzero if the required learning artifacts are missing or the starter benchmark target is not met.
+
 ### `pnpm install` fails
 
 - verify Node `20+`
@@ -110,6 +120,20 @@ Check:
 
 If any are missing, treat the learning run as invalid.
 
+### `pnpm agent:run` fails after `agent:learn`
+
+Inspect:
+
+- `output/self-improving-runner/latest-session-summary.json`
+- `output/self-improving-runner/champion-policy.json`
+- `output/self-improving-runner/candidate-summaries/*.json`
+
+Common causes:
+
+- required learning artifacts are missing
+- the run stayed hitless in the first 5 completed attempts
+- the run got hits but never secured 1 kill within the first 5 completed attempts
+
 ### Local memory docs did not update
 
 Check:
@@ -154,6 +178,9 @@ Useful telemetry to inspect first:
 - `controllerTelemetry.modeTicks`
 - `controllerTelemetry.recentEventCounts`
 - `controllerTelemetry.damageReactionCount`
+- `controllerTelemetry.noContactRecoveryCount`
+
+Treat `timeToFirst*` as diagnostic only until it is calibrated against `survivalTimeS`. If those values exceed survival time, do not use them for promotion decisions.
 
 ## Evaluation hangs
 
