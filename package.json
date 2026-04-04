@@ -11,8 +11,9 @@
     "smoke:no-context": "node examples/no-context-smoke.mjs",
     "agent:baseline": "node examples/baseline-loop.mjs",
     "agent:learn": "node examples/self-improving-runner.mjs",
+    "agent:run": "node examples/agent-run.mjs",
     "test:unit": "node --test test/*.test.mjs",
-    "ci:check": "pnpm contract:check && pnpm test:unit && node --check examples/no-context-smoke.mjs && node --check examples/baseline-loop.mjs && node --check examples/self-improving-runner.mjs"
+    "ci:check": "pnpm contract:check && pnpm test:unit && node --check examples/no-context-smoke.mjs && node --check examples/baseline-loop.mjs && node --check examples/self-improving-runner.mjs && node --check examples/agent-run.mjs"
   },
   "repository": {
     "type": "git",

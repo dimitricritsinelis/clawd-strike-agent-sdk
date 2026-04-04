@@ -143,6 +143,7 @@ When present, `controllerTelemetry` includes deterministic public-safe acquisiti
 - `killEventsObserved`
 - `damageEventsObserved`
 - `damageReactionCount`
+- `noContactRecoveryCount`
 - `modeTicks`
 - `modeShots`
 - `ticksInEngageMode`
@@ -160,3 +161,5 @@ When present, `controllerTelemetry` includes deterministic public-safe acquisiti
 - `timeToFirstKillS`
 - `estimatedPitchRangeDeg`
 - `lastMode`
+
+Timing fields such as `timeToFirstDamageS`, `timeToFirstHitS`, and `timeToFirstKillS` must be dropped when they exceed `survivalTimeS`.

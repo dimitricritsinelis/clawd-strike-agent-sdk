@@ -110,3 +110,38 @@ test("damage-driven reacquisition emits a distinct pitch-aware micro scan after 
   assert.ok(telemetry.pitchAbsTravel > 0.2);
   assert.ok(telemetry.shotsWithinWindowAfterDamage >= 0);
 });
+
+test("repeated no-contact damage triggers a coarse reorient instead of continued forward drift", () => {
+  const controller = createAdaptiveSweeperController(DEFAULT_ADAPTIVE_SWEEPER_POLICY, {
+    learningPhase: LEARNING_PHASES.BOOTSTRAP_HIT,
+    stepMs: 125
+  });
+
+  controller.nextAction(makeState({ health: 100 }));
+  controller.nextAction(makeState({
+    health: 88,
+    feedback: {
+      recentEvents: [{ id: 1, type: "damage-taken", amount: 12 }]
+    }
+  }));
+  controller.nextAction(makeState({
+    health: 76,
+    feedback: {
+      recentEvents: [{ id: 2, type: "damage-taken", amount: 12 }]
+    }
+  }));
+
+  let reorientAction = null;
+  for (let tick = 0; tick < 20; tick += 1) {
+    reorientAction = controller.nextAction(makeState({ health: 76 }));
+    if (controller.getTelemetry().lastMode === "reorient") {
+      break;
+    }
+  }
+
+  const telemetry = controller.getTelemetry();
+  assert.equal(telemetry.noContactRecoveryCount >= 1, true);
+  assert.equal(telemetry.lastMode, "reorient");
+  assert.ok(reorientAction.moveZ <= 0);
+  assert.ok(Math.abs(reorientAction.lookYawDelta) >= DEFAULT_ADAPTIVE_SWEEPER_POLICY.noContactYawDeg * 0.8);
+});

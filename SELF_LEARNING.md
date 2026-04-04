@@ -7,10 +7,10 @@ Curated durable lessons across runs. Keep this focused on heuristics that surviv
 - None yet.
 
 ## Recurring failure patterns
-- candidate tied champion in a zero-contact bootstrap_hit batch (4)
+- candidate tied champion in a zero-contact bootstrap_hit batch (1)
 
 ## Experiments that failed
-- candidate tied champion in a zero-contact bootstrap_hit batch (4)
+- candidate tied champion in a zero-contact bootstrap_hit batch (1)
 
 ## Experiments that improved performance
 - None yet.

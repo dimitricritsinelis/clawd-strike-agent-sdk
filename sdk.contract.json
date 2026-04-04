@@ -17,7 +17,8 @@
     "contract:check",
     "smoke:no-context",
     "agent:baseline",
-    "agent:learn"
+    "agent:learn",
+    "agent:run"
   ],
   "requiredFiles": [
     ".github/workflows/public-agent-sdk.yml",
@@ -39,6 +40,7 @@
     "examples/no-context-smoke.mjs",
     "examples/baseline-loop.mjs",
     "examples/self-improving-runner.mjs",
+    "examples/agent-run.mjs",
     "scripts/validate-sdk-contract.mjs",
     "src/index.mjs",
     "src/runtime/contract.mjs",
@@ -50,6 +52,7 @@
     "src/learn/optimizer.mjs",
     "src/learn/storage.mjs",
     "src/learn/memory-docs.mjs",
+    "src/learn/run-validation.mjs",
     "src/utils/fs.mjs",
     "src/utils/random.mjs",
     "output/self-improving-runner/.gitkeep",

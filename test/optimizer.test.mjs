@@ -77,6 +77,25 @@ test("bootstrap_kill promotes a real kill over hit-only batches", () => {
   assert.equal(result.key, "episodesWithKill");
 });
 
+test("bootstrap_hit ignores earlier first-hit timing when hit evidence is otherwise tied", () => {
+  const champion = aggregateEpisodes([
+    { shotsHit: 1, shotsFired: 20, kills: 0, finalScore: 0, survivalTimeS: 4.2, accuracy: 0.05, timeToFirstHitS: 1.6 },
+    { shotsHit: 0, shotsFired: 18, kills: 0, finalScore: 0, survivalTimeS: 4.1, accuracy: 0 }
+  ]);
+  const candidate = aggregateEpisodes([
+    { shotsHit: 1, shotsFired: 20, kills: 0, finalScore: 0, survivalTimeS: 4.2, accuracy: 0.05, timeToFirstHitS: 0.8 },
+    { shotsHit: 0, shotsFired: 18, kills: 0, finalScore: 0, survivalTimeS: 4.1, accuracy: 0 }
+  ]);
+
+  const result = compareBatchMetrics(candidate, champion, {
+    learningPhase: determineLearningPhase(champion)
+  });
+
+  assert.equal(result.promote, false);
+  assert.notEqual(result.key, "meanTimeToFirstHitS");
+  assert.notEqual(result.key, "bestTimeToFirstHitS");
+});
+
 test("stabilize_score still prioritizes kill-positive consistency before score spikes", () => {
   const champion = aggregateEpisodes([
     { shotsHit: 2, shotsFired: 20, kills: 1, finalScore: 10, survivalTimeS: 5.2, accuracy: 0.1, timeToFirstKillS: 3.9 },

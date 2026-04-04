@@ -8,16 +8,23 @@ import {
   readState,
   waitForRespawn
 } from "./browser.mjs";
+import { sanitizeEpisodeTiming, sanitizeEpisodeTimings } from "../learn/run-validation.mjs";
 
 export function createEpisodeRecord(policyEntry, episodeIndex, observation, controllerTelemetry = null) {
   const summary = observation?.lastRunSummary ?? {};
   const bestScore = Number(summary.bestScore ?? observation?.score?.best ?? 0);
   const finalScore = Number(summary.finalScore ?? observation?.score?.lastRun ?? 0);
+  const survivalTimeS = Number(summary.survivalTimeS ?? 0);
   const telemetry = controllerTelemetry && typeof controllerTelemetry === "object"
-    ? controllerTelemetry
+    ? {
+        ...controllerTelemetry,
+        timeToFirstDamageS: sanitizeEpisodeTiming(controllerTelemetry.timeToFirstDamageS, survivalTimeS),
+        timeToFirstHitS: sanitizeEpisodeTiming(controllerTelemetry.timeToFirstHitS, survivalTimeS),
+        timeToFirstKillS: sanitizeEpisodeTiming(controllerTelemetry.timeToFirstKillS, survivalTimeS)
+      }
     : null;
 
-  return {
+  return sanitizeEpisodeTimings({
     candidateId: policyEntry.id,
     candidateLabel: policyEntry.label,
     parentId: policyEntry.parentId ?? null,
@@ -27,7 +34,7 @@ export function createEpisodeRecord(policyEntry, episodeIndex, observation, cont
     episodeIndex,
     finalScore,
     bestScore,
-    survivalTimeS: Number(summary.survivalTimeS ?? 0),
+    survivalTimeS,
     kills: Number(summary.kills ?? 0),
     headshots: Number(summary.headshots ?? 0),
     shotsFired: Number(summary.shotsFired ?? 0),
@@ -35,14 +42,14 @@ export function createEpisodeRecord(policyEntry, episodeIndex, observation, cont
     accuracy: Number(summary.accuracy ?? 0),
     hitPositive: Number(summary.shotsHit ?? 0) > 0,
     killPositive: Number(summary.kills ?? 0) > 0,
-    timeToFirstDamageS: telemetry?.timeToFirstDamageS ?? null,
-    timeToFirstHitS: telemetry?.timeToFirstHitS ?? null,
-    timeToFirstKillS: telemetry?.timeToFirstKillS ?? null,
+    timeToFirstDamageS: sanitizeEpisodeTiming(telemetry?.timeToFirstDamageS, survivalTimeS),
+    timeToFirstHitS: sanitizeEpisodeTiming(telemetry?.timeToFirstHitS, survivalTimeS),
+    timeToFirstKillS: sanitizeEpisodeTiming(telemetry?.timeToFirstKillS, survivalTimeS),
     deathCause: summary.deathCause ?? "unknown",
     lastRun: observation?.score?.lastRun ?? null,
     localBestImproved: finalScore > 0 && finalScore >= bestScore,
     controllerTelemetry: telemetry
-  };
+  });
 }
 
 export async function runPolicyEpisodes(options) {

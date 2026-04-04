@@ -34,6 +34,12 @@ This file defines the safe knobs the agent may tune automatically before touchin
 | `damageScanMultiplier` | number | `1 .. 3` | Temporary scan widening after damage |
 | `damageForwardScale` | number | `0 .. 0.6` | Forward slowdown during damage reacquisition |
 | `damageStrafeScale` | number | `0.8 .. 2` | Strafe boost during damage reacquisition |
+| `noContactRecoveryTicks` | integer | `0 .. 24` | How long the coarse no-contact recovery state lasts |
+| `noContactYawDeg` | number | `1 .. 16` | Coarse yaw committed per tick during no-contact recovery |
+| `noContactDamageThreshold` | integer | `1 .. 6` | Damage events without contact before no-contact recovery triggers |
+| `noContactReloadThreshold` | integer | `1 .. 6` | Reload cycles without contact before no-contact recovery triggers |
+| `noContactMoveZ` | number | `-0.6 .. 0.2` | Forward or reverse move used during no-contact recovery |
+| `noContactStrafeScale` | number | `0.8 .. 2.4` | Strafe multiplier used during no-contact recovery |
 | `crouchEveryTicks` | integer | `0 .. 120` | Crouch cadence. `0` disables it |
 | `pauseEveryTicks` | integer | `0 .. 120` | Optional movement-pause cadence. `0` disables it |
 | `pauseDurationTicks` | integer | `0 .. 12` | How long each pause lasts |
@@ -46,32 +52,38 @@ This file defines the safe knobs the agent may tune automatically before touchin
 {
   "family": "adaptive-sweeper",
   "version": 3,
-  "forwardMove": 0.58,
-  "strafeMagnitude": 0.3,
-  "strafePeriodTicks": 14,
-  "sweepAmplitudeDeg": 1.85,
-  "sweepPeriodTicks": 16,
-  "pitchSweepAmplitudeDeg": 1.55,
-  "pitchSweepPeriodTicks": 14,
+  "forwardMove": 0.44,
+  "strafeMagnitude": 0.36,
+  "strafePeriodTicks": 12,
+  "sweepAmplitudeDeg": 2.25,
+  "sweepPeriodTicks": 14,
+  "pitchSweepAmplitudeDeg": 1.9,
+  "pitchSweepPeriodTicks": 12,
   "openingNoFireTicks": 2,
   "settleTicks": 2,
   "fireBurstLengthTicks": 1,
-  "fireBurstCooldownTicks": 5,
+  "fireBurstCooldownTicks": 6,
   "engageBurstLengthTicks": 4,
   "engageBurstCooldownTicks": 1,
-  "fireMoveScale": 0.28,
+  "fireMoveScale": 0.24,
   "engageHoldTicks": 8,
   "reloadThreshold": 4,
-  "panicTurnDeg": 7.5,
+  "panicTurnDeg": 9.5,
   "panicTicks": 5,
-  "panicPitchNudgeDeg": 1.7,
+  "panicPitchNudgeDeg": 1.9,
   "damagePauseTicks": 1,
-  "microScanTicks": 4,
-  "microScanYawDeg": 1.35,
-  "microScanPitchDeg": 0.8,
-  "damageScanMultiplier": 1.8,
-  "damageForwardScale": 0.14,
-  "damageStrafeScale": 1.6,
+  "microScanTicks": 5,
+  "microScanYawDeg": 1.85,
+  "microScanPitchDeg": 1.05,
+  "damageScanMultiplier": 2,
+  "damageForwardScale": 0.08,
+  "damageStrafeScale": 1.85,
+  "noContactRecoveryTicks": 6,
+  "noContactYawDeg": 5.6,
+  "noContactDamageThreshold": 2,
+  "noContactReloadThreshold": 2,
+  "noContactMoveZ": -0.18,
+  "noContactStrafeScale": 1.45,
   "crouchEveryTicks": 0,
   "pauseEveryTicks": 0,
   "pauseDurationTicks": 0,
@@ -87,7 +99,7 @@ Older on-disk policies remain valid. Missing fields are filled by normalization.
 Safe by default:
 
 - mutating one or two parameters per candidate
-- biasing mutations toward pitch bands, probe bursts, damage micro-scan, and engage hold during contact bootstrap
+- biasing mutations toward pitch bands, probe bursts, damage micro-scan, no-contact recovery, and engage hold during contact bootstrap
 - widening mutation scale slightly during stagnation
 - promoting only on batch evidence
 - updating `MEMORY.md`, `SELF_LEARNING.md`, and output artifacts
@@ -111,6 +123,7 @@ Use this order:
    - pitch-band sweep
    - probe-burst cadence
    - damage micro-scan width
+   - no-contact recovery trigger and yaw commit
    - movement slowdown while firing
    - `feedback.recentEvents` handling
 2. kill bootstrap
