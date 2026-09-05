@@ -5,7 +5,8 @@ import { fileExists, readJsonIfExists } from "../utils/fs.mjs";
 export const REQUIRED_LEARNING_OUTPUT_FILES = Object.freeze([
   "champion-policy.json",
   "episodes.jsonl",
-  "latest-session-summary.json"
+  "latest-session-summary.json",
+  "scoreboard.json"
 ]);
 
 export function sanitizeEpisodeTiming(value, survivalTimeS) {

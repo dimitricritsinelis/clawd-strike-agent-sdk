@@ -6,117 +6,100 @@ import {
   determineLearningPhase
 } from "../src/learn/optimizer.mjs";
 
-test("bootstrap_hit does not promote zero-contact survival over zero-contact survival", () => {
-  const champion = aggregateEpisodes([
-    { shotsHit: 0, shotsFired: 10, kills: 0, finalScore: 0, survivalTimeS: 4.1, accuracy: 0 },
-    { shotsHit: 0, shotsFired: 9, kills: 0, finalScore: 0, survivalTimeS: 4.2, accuracy: 0 }
-  ]);
-  const candidate = aggregateEpisodes([
-    { shotsHit: 0, shotsFired: 11, kills: 0, finalScore: 0, survivalTimeS: 6.8, accuracy: 0 },
-    { shotsHit: 0, shotsFired: 12, kills: 0, finalScore: 0, survivalTimeS: 6.5, accuracy: 0 }
-  ]);
+function episode(overrides = {}) {
+  return {
+    completed: true,
+    status: "completed",
+    finalScore: 10,
+    shotsHit: 2,
+    shotsFired: 20,
+    kills: 1,
+    survivalTimeS: 5,
+    accuracy: 0.1,
+    ...overrides
+  };
+}
 
-  const result = compareBatchMetrics(candidate, champion, {
-    learningPhase: determineLearningPhase(champion)
-  });
+function batch(count = 5, overrides = {}) {
+  return aggregateEpisodes(Array.from({ length: count }, () => episode(overrides)));
+}
 
-  assert.equal(determineLearningPhase(champion), "bootstrap_hit");
-  assert.equal(result.promote, false);
-  assert.equal(result.key, "zero_contact_tie");
+test("identical per-episode performance cannot win through a larger batch", () => {
+  const champion = batch(5);
+  const candidate = batch(6);
+  assert.ok(candidate.totalKills > champion.totalKills);
+  assert.ok(candidate.totalShotsHit > champion.totalShotsHit);
+  assert.equal(candidate.meanScore, champion.meanScore);
+  assert.equal(compareBatchMetrics(candidate, champion).promote, false);
+  assert.equal(compareBatchMetrics(candidate, champion).key, "incomplete_batch");
 });
 
-test("bootstrap_hit promotes a real hit over zero-hit survival", () => {
-  const champion = aggregateEpisodes([
-    { shotsHit: 0, shotsFired: 40, kills: 0, finalScore: 0, survivalTimeS: 5.1, accuracy: 0 },
-    { shotsHit: 0, shotsFired: 38, kills: 0, finalScore: 0, survivalTimeS: 5.0, accuracy: 0 },
-    { shotsHit: 0, shotsFired: 42, kills: 0, finalScore: 0, survivalTimeS: 4.9, accuracy: 0 },
-    { shotsHit: 0, shotsFired: 35, kills: 0, finalScore: 0, survivalTimeS: 4.8, accuracy: 0 },
-    { shotsHit: 0, shotsFired: 39, kills: 0, finalScore: 0, survivalTimeS: 5.0, accuracy: 0 }
-  ]);
-  const candidate = aggregateEpisodes([
-    { shotsHit: 1, shotsFired: 24, kills: 0, finalScore: 0, survivalTimeS: 4.4, accuracy: 1 / 24, timeToFirstHitS: 2.2 },
-    { shotsHit: 0, shotsFired: 21, kills: 0, finalScore: 0, survivalTimeS: 4.6, accuracy: 0 },
-    { shotsHit: 0, shotsFired: 26, kills: 0, finalScore: 0, survivalTimeS: 4.5, accuracy: 0 },
-    { shotsHit: 0, shotsFired: 23, kills: 0, finalScore: 0, survivalTimeS: 4.4, accuracy: 0 },
-    { shotsHit: 0, shotsFired: 22, kills: 0, finalScore: 0, survivalTimeS: 4.5, accuracy: 0 }
-  ]);
-
-  const result = compareBatchMetrics(candidate, champion, {
-    learningPhase: determineLearningPhase(champion)
-  });
-
-  assert.equal(determineLearningPhase(champion), "bootstrap_hit");
-  assert.equal(result.promote, true);
-  assert.equal(result.phase, "bootstrap_hit");
-  assert.equal(result.key, "episodesWithHit");
+test("both champion and candidate must supply the same configured completed batch size", () => {
+  assert.equal(compareBatchMetrics(batch(5, { finalScore: 20 }), batch(4)).promote, false);
+  assert.equal(compareBatchMetrics(batch(4, { finalScore: 20 }), batch(5)).promote, false);
+  assert.equal(compareBatchMetrics(batch(2, { finalScore: 20 }), batch(2)).promote, false);
+  assert.equal(compareBatchMetrics(batch(2, { finalScore: 20 }), batch(2), { expectedEpisodes: 2 }).promote, true);
+  assert.throws(() => compareBatchMetrics(batch(), batch(), { expectedEpisodes: 0 }), /positive integer/);
 });
 
-test("bootstrap_kill promotes a real kill over hit-only batches", () => {
-  const champion = aggregateEpisodes([
-    { shotsHit: 1, shotsFired: 24, kills: 0, finalScore: 0, survivalTimeS: 4.6, accuracy: 1 / 24, timeToFirstHitS: 1.9 },
-    { shotsHit: 1, shotsFired: 22, kills: 0, finalScore: 0, survivalTimeS: 4.7, accuracy: 1 / 22, timeToFirstHitS: 2.1 },
-    { shotsHit: 0, shotsFired: 26, kills: 0, finalScore: 0, survivalTimeS: 4.5, accuracy: 0 },
-    { shotsHit: 1, shotsFired: 24, kills: 0, finalScore: 0, survivalTimeS: 4.8, accuracy: 1 / 24, timeToFirstHitS: 2.4 },
-    { shotsHit: 0, shotsFired: 21, kills: 0, finalScore: 0, survivalTimeS: 4.4, accuracy: 0 }
-  ]);
-  const candidate = aggregateEpisodes([
-    { shotsHit: 2, shotsFired: 20, kills: 1, finalScore: 10, survivalTimeS: 4.2, accuracy: 0.1, timeToFirstHitS: 1.4, timeToFirstKillS: 3.1 },
-    { shotsHit: 0, shotsFired: 18, kills: 0, finalScore: 0, survivalTimeS: 4.3, accuracy: 0 },
-    { shotsHit: 1, shotsFired: 19, kills: 0, finalScore: 0, survivalTimeS: 4.1, accuracy: 1 / 19 },
-    { shotsHit: 0, shotsFired: 18, kills: 0, finalScore: 0, survivalTimeS: 4.0, accuracy: 0 },
-    { shotsHit: 0, shotsFired: 17, kills: 0, finalScore: 0, survivalTimeS: 4.2, accuracy: 0 }
-  ]);
-
-  const result = compareBatchMetrics(candidate, champion, {
-    learningPhase: determineLearningPhase(champion)
-  });
-
-  assert.equal(determineLearningPhase(champion), "bootstrap_kill");
-  assert.equal(result.promote, true);
-  assert.equal(result.phase, "bootstrap_kill");
-  assert.equal(result.key, "episodesWithKill");
-});
-
-test("bootstrap_hit ignores earlier first-hit timing when hit evidence is otherwise tied", () => {
-  const champion = aggregateEpisodes([
-    { shotsHit: 1, shotsFired: 20, kills: 0, finalScore: 0, survivalTimeS: 4.2, accuracy: 0.05, timeToFirstHitS: 1.6 },
-    { shotsHit: 0, shotsFired: 18, kills: 0, finalScore: 0, survivalTimeS: 4.1, accuracy: 0 }
-  ]);
-  const candidate = aggregateEpisodes([
-    { shotsHit: 1, shotsFired: 20, kills: 0, finalScore: 0, survivalTimeS: 4.2, accuracy: 0.05, timeToFirstHitS: 0.8 },
-    { shotsHit: 0, shotsFired: 18, kills: 0, finalScore: 0, survivalTimeS: 4.1, accuracy: 0 }
-  ]);
-
-  const result = compareBatchMetrics(candidate, champion, {
-    learningPhase: determineLearningPhase(champion)
-  });
-
-  assert.equal(result.promote, false);
-  assert.notEqual(result.key, "meanTimeToFirstHitS");
-  assert.notEqual(result.key, "bestTimeToFirstHitS");
-});
-
-test("stabilize_score still prioritizes kill-positive consistency before score spikes", () => {
-  const champion = aggregateEpisodes([
-    { shotsHit: 2, shotsFired: 20, kills: 1, finalScore: 10, survivalTimeS: 5.2, accuracy: 0.1, timeToFirstKillS: 3.9 },
-    { shotsHit: 2, shotsFired: 18, kills: 1, finalScore: 10, survivalTimeS: 5.0, accuracy: 2 / 18, timeToFirstKillS: 4.1 },
-    { shotsHit: 1, shotsFired: 16, kills: 0, finalScore: 0, survivalTimeS: 4.8, accuracy: 1 / 16 },
-    { shotsHit: 1, shotsFired: 17, kills: 0, finalScore: 0, survivalTimeS: 4.7, accuracy: 1 / 17 },
-    { shotsHit: 0, shotsFired: 14, kills: 0, finalScore: 0, survivalTimeS: 4.9, accuracy: 0 }
-  ]);
-  const flashyButWorse = aggregateEpisodes([
-    { shotsHit: 3, shotsFired: 28, kills: 1, finalScore: 20, survivalTimeS: 5.1, accuracy: 3 / 28 },
-    { shotsHit: 0, shotsFired: 26, kills: 0, finalScore: 0, survivalTimeS: 4.2, accuracy: 0 },
-    { shotsHit: 0, shotsFired: 25, kills: 0, finalScore: 0, survivalTimeS: 4.1, accuracy: 0 },
-    { shotsHit: 0, shotsFired: 23, kills: 0, finalScore: 0, survivalTimeS: 4.0, accuracy: 0 },
-    { shotsHit: 0, shotsFired: 22, kills: 0, finalScore: 0, survivalTimeS: 4.3, accuracy: 0 }
-  ]);
-
-  const result = compareBatchMetrics(flashyButWorse, champion, {
-    learningPhase: determineLearningPhase(champion)
-  });
-
+test("higher mean score promotes despite fewer kills, hits, accuracy, and survival", () => {
+  const champion = batch(5, { finalScore: 10, kills: 3, shotsHit: 10, accuracy: 0.5, survivalTimeS: 20 });
+  const candidate = batch(5, { finalScore: 11, kills: 1, shotsHit: 2, accuracy: 0.1, survivalTimeS: 10 });
+  const decision = compareBatchMetrics(candidate, champion);
   assert.equal(determineLearningPhase(champion), "stabilize_score");
-  assert.equal(result.promote, false);
-  assert.equal(result.key, "episodesWithKill");
+  assert.equal(decision.promote, true);
+  assert.equal(decision.key, "meanScore");
+  assert.equal(decision.delta, 1);
+});
+
+test("score ties never promote, even with better diagnostic metrics", () => {
+  const decision = compareBatchMetrics(batch(5, { kills: 5, shotsHit: 12, survivalTimeS: 30 }), batch());
+  assert.equal(decision.promote, false);
+  assert.match(decision.reason, /tied/);
+  assert.equal(decision.delta, 0);
+});
+
+test("a single best-ever score cannot override a lower batch mean", () => {
+  const candidate = aggregateEpisodes([episode({ finalScore: 40 }), ...Array.from({ length: 4 }, () => episode({ finalScore: 0 }))]);
+  assert.equal(candidate.bestScore, 40);
+  assert.equal(candidate.meanScore, 8);
+  assert.equal(compareBatchMetrics(candidate, batch()).promote, false);
+});
+
+test("partial and invalid runs cannot be promoted or contaminate completed score metrics", () => {
+  for (const overrides of [
+    { completed: false, status: "timeout", finalScore: 999 },
+    { completed: true, status: "timeout", finalScore: 999 },
+    { valid: false, finalScore: 999 },
+    { finalScore: NaN },
+    { finalScore: Infinity },
+    { finalScore: null },
+    { shotsHit: -1 },
+    { survivalTimeS: NaN }
+  ]) {
+    const candidate = aggregateEpisodes([
+      ...Array.from({ length: 4 }, () => episode()),
+      episode(overrides)
+    ]);
+    assert.equal(candidate.completedEpisodes, 4);
+    assert.equal(candidate.meanScore, 10);
+    assert.equal(compareBatchMetrics(candidate, batch()).promote, false);
+    assert.equal(compareBatchMetrics(batch(), candidate).promote, false);
+  }
+});
+
+test("unmarked historical episodes and aggregates do not qualify as current completed evidence", () => {
+  const historical = episode();
+  delete historical.completed;
+  const candidate = aggregateEpisodes(Array.from({ length: 5 }, () => historical));
+  assert.equal(candidate.completedEpisodes, 0);
+  assert.equal(compareBatchMetrics(candidate, batch()).promote, false);
+  assert.equal(compareBatchMetrics({ totalEpisodes: 5, meanScore: 100 }, batch()).promote, false);
+});
+
+test("zero-contact survival and hit-only score ties are diagnostic, not promotion", () => {
+  const champion = batch(5, { shotsHit: 0, kills: 0, finalScore: 0 });
+  assert.equal(determineLearningPhase(champion), "bootstrap_hit");
+  assert.equal(compareBatchMetrics(batch(5, { shotsHit: 0, kills: 0, finalScore: 0, survivalTimeS: 99 }), champion).promote, false);
+  assert.equal(compareBatchMetrics(batch(5, { shotsHit: 1, kills: 0, finalScore: 0 }), champion).promote, false);
 });

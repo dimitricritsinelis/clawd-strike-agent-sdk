@@ -39,5 +39,6 @@ export const PUBLIC_AGENT_REQUIRED_LEARNING_OUTPUTS = Object.freeze([
   "output/self-improving-runner/champion-policy.json",
   "output/self-improving-runner/episodes.jsonl",
   "output/self-improving-runner/latest-session-summary.json",
-  "output/self-improving-runner/candidate-summaries/*.json"
+  "output/self-improving-runner/candidate-summaries/*.json",
+  "output/self-improving-runner/scoreboard.json"
 ]);

@@ -1,70 +1,16 @@
-# Tuning guide
+# Policy tuning
 
-Optional background doc. This is not part of the required reading order.
+Optional reference. Edit one behavior in `src/policies/visible-target.mjs`, then compare against the recoverable saved champion through `pnpm agent:run`.
 
-## First principles
+Use public evidence to choose the behavior:
 
-Clawd Strike under the public contract is a sparse-reward control problem.
+- Acquisition: visible-target counts and search actions.
+- Aiming: relative offsets before and after look actions; whether fire occurred while aligned.
+- Reloading: magazine/reserve state and reload actions near death.
+- Movement: movement actions, `movementBlocked`, and recovery actions.
 
-That means:
+These signals support hypotheses, not proven causes. Change one behavior and evaluate it over equal completed batches, defaulting to five episodes per policy. Use the same configured URL and execution settings. Champion scores must come from a fresh evaluation, not old recordings.
 
-- change a little
-- compare on batches
-- keep evidence
-- do not promote survival-only zero-hit behavior
+Mean final score decides promotion. Best-ever individual score, kills, hits, shots, accuracy, and survival are reported separately. Larger raw totals from a larger batch cannot justify promotion. Ties, incomplete batches, and invalid runs reject the candidate.
 
-## High-value parameters before the first hit
-
-Focus on:
-
-- `pitchSweepAmplitudeDeg`
-- `pitchSweepPeriodTicks`
-- `microScanTicks`
-- `microScanYawDeg`
-- `microScanPitchDeg`
-- `settleTicks`
-- `fireBurstLengthTicks`
-- `fireBurstCooldownTicks`
-- `fireMoveScale`
-- `openingNoFireTicks`
-
-These control vertical acquisition, settle windows, and spam reduction.
-
-## High-value parameters after the first hit
-
-Focus on:
-
-- `engageHoldTicks`
-- `engageBurstLengthTicks`
-- `engageBurstCooldownTicks`
-- `panicTurnDeg`
-- `panicPitchNudgeDeg`
-- `damagePauseTicks`
-- `reloadThreshold`
-
-These control conversion, damage recovery, and follow-up stability.
-
-## Batch sizes
-
-For bootstrap:
-
-- `BASELINE_DEATHS=5`
-- `CANDIDATE_SCREEN_DEATHS=2`
-- `CANDIDATE_DEATHS=6`
-- `BOOTSTRAP_CATALOG_SIZE=6`
-- `BOOTSTRAP_CONFIRM_COUNT=2`
-
-For longer score optimization:
-
-- `BASELINE_DEATHS=7`
-- `CANDIDATE_DEATHS=7`
-
-## Stagnation handling
-
-If no promotion occurs for many candidates:
-
-- sample a hall-of-fame parent
-- widen mutation magnitude modestly
-- if the batch is still zero-hit, escalate to `src/policies/**`
-
-Do not make attempt budget the primary remedy for a completely hitless controller.
+Do not expand the blind sweeper's parameter catalog, add a second optimizer, or increase the attempt budget as the only response to failed target acquisition.

@@ -1,6 +1,8 @@
 import path from "node:path";
 import {
   PUBLIC_AGENT_ALLOWED_NAME_REGEX,
+  PUBLIC_AGENT_API_VERSION,
+  PUBLIC_AGENT_CONTRACT,
   PUBLIC_AGENT_CANONICAL_HOST,
   PUBLIC_AGENT_NAME_MAX_LENGTH,
   PUBLIC_AGENT_STABLE_SELECTORS,
@@ -25,14 +27,15 @@ export function sanitizeAgentName(value, fallback = DEFAULT_AGENT_NAME) {
   return fallback;
 }
 
-export function buildRuntimeUrl(baseUrl = PUBLIC_AGENT_CANONICAL_HOST, options = {}) {
+export function buildRuntimeUrl(baseUrl, options = {}) {
+  if (!baseUrl) throw new Error("BASE_URL must explicitly identify the game deployment.");
   const {
     agentName = DEFAULT_AGENT_NAME,
     autostart = "agent",
     extraSearchParams = {}
   } = options;
 
-  const url = new URL("/", baseUrl);
+  const url = new URL(baseUrl);
   url.searchParams.set("autostart", autostart);
   url.searchParams.set("name", sanitizeAgentName(agentName));
 
@@ -50,15 +53,24 @@ export function delay(ms) {
 
 export async function launchBrowser(options = {}) {
   const { chromium } = await import("playwright");
-  const { headless = true, viewport = DEFAULT_VIEWPORT } = options;
+  const { headless = true, viewport = DEFAULT_VIEWPORT, timeoutMs = 30_000 } = options;
+  const deadlineMs = Math.min(options.deadlineMs ?? Infinity, Date.now() + timeoutMs);
+  const timeout = () => remainingStartupMs(deadlineMs, options.signal);
 
   const browser = await chromium
-    .launch({ channel: "chrome", headless })
-    .catch(() => chromium.launch({ headless }));
+    .launch({ channel: "chrome", headless, timeout: timeout() })
+    .catch(() => chromium.launch({ headless, timeout: timeout() }));
 
-  const context = await browser.newContext({ viewport });
-  const page = await context.newPage();
-  return { browser, context, page };
+  try {
+    remainingStartupMs(deadlineMs, options.signal);
+    const context = await browser.newContext({ viewport });
+    const page = await context.newPage();
+    remainingStartupMs(deadlineMs, options.signal);
+    return { browser, context, page };
+  } catch (error) {
+    await browser.close();
+    throw error;
+  }
 }
 
 export async function launchPersistentBrowser(options = {}) {
@@ -66,14 +78,17 @@ export async function launchPersistentBrowser(options = {}) {
   const {
     headless = true,
     viewport = DEFAULT_VIEWPORT,
+    timeoutMs = 30_000,
     userDataDir = path.resolve(process.cwd(), ".agent-profile")
   } = options;
 
+  const deadlineMs = Math.min(options.deadlineMs ?? Infinity, Date.now() + timeoutMs);
+  const timeout = () => remainingStartupMs(deadlineMs, options.signal);
   await ensureDir(userDataDir);
 
   const context = await chromium
-    .launchPersistentContext(userDataDir, { channel: "chrome", headless, viewport })
-    .catch(() => chromium.launchPersistentContext(userDataDir, { headless, viewport }));
+    .launchPersistentContext(userDataDir, { channel: "chrome", headless, viewport, timeout: timeout() })
+    .catch(() => chromium.launchPersistentContext(userDataDir, { headless, viewport, timeout: timeout() }));
 
   const page = context.pages()[0] ?? (await context.newPage());
   return { context, page, userDataDir };
@@ -154,7 +169,7 @@ export async function readState(page) {
   });
 
   if (!state || typeof state !== "object") {
-    throw new Error("Documented agent state is unavailable.");
+    throw compatibilityError("Documented agent state is unavailable or malformed.");
   }
 
   return state;
@@ -200,7 +215,7 @@ export async function waitForRuntimeReady(page, options = {}) {
     } catch {
       return false;
     }
-  }, { timeout: timeoutMs });
+  }, undefined, { timeout: timeoutMs });
 
   return await readState(page);
 }
@@ -227,48 +242,91 @@ export async function waitForRespawn(page, options = {}) {
     } catch {
       return false;
     }
-  }, { timeout: timeoutMs });
+  }, undefined, { timeout: timeoutMs });
 
   return await readState(page);
 }
 
+function remainingStartupMs(deadlineMs, signal) {
+  if (signal?.aborted) throw Object.assign(new Error("Startup stopped."), { code: "stopped" });
+  if (Date.now() >= deadlineMs) throw Object.assign(new Error("Startup time budget exhausted."), { code: "budget_exhausted" });
+  return Math.max(1, deadlineMs - Date.now());
+}
+
 export async function gotoAgentRuntimeViaUi(page, options = {}) {
-  const {
-    baseUrl = PUBLIC_AGENT_CANONICAL_HOST,
-    agentName = DEFAULT_AGENT_NAME
-  } = options;
-
-  await page.goto(new URL("/", baseUrl).toString(), { waitUntil: "domcontentloaded" });
-  await page.locator(PUBLIC_AGENT_STABLE_SELECTORS.agentMode).click();
-  await page.locator(PUBLIC_AGENT_STABLE_SELECTORS.play).click();
-
+  const { baseUrl, agentName = DEFAULT_AGENT_NAME, signal } = options;
+  if (!baseUrl) throw new Error("BASE_URL must explicitly identify the game deployment.");
+  const deadlineMs = Math.min(options.deadlineMs ?? Infinity, Date.now() + (options.timeoutMs ?? 90_000));
+  const timeout = () => remainingStartupMs(deadlineMs, signal);
+  await page.goto(new URL(baseUrl).toString(), { waitUntil: "domcontentloaded", timeout: timeout() });
+  await page.locator(PUBLIC_AGENT_STABLE_SELECTORS.agentMode).click({ timeout: timeout() });
+  await page.locator(PUBLIC_AGENT_STABLE_SELECTORS.play).click({ timeout: timeout() });
   const agentNameInput = page.locator(PUBLIC_AGENT_STABLE_SELECTORS.agentName);
-  await agentNameInput.fill(sanitizeAgentName(agentName));
-  await agentNameInput.press("Enter");
-
-  return await waitForRuntimeReady(page);
+  await agentNameInput.fill(sanitizeAgentName(agentName), { timeout: timeout() });
+  await agentNameInput.press("Enter", { timeout: timeout() });
+  return await waitForRuntimeReady(page, { timeoutMs: timeout() });
 }
 
 export async function gotoAgentRuntimeViaUrl(page, options = {}) {
-  const {
-    baseUrl = PUBLIC_AGENT_CANONICAL_HOST,
-    agentName = DEFAULT_AGENT_NAME,
-    extraSearchParams = {}
-  } = options;
-
+  const { baseUrl, agentName = DEFAULT_AGENT_NAME, extraSearchParams = {}, signal } = options;
+  const deadlineMs = Math.min(options.deadlineMs ?? Infinity, Date.now() + (options.timeoutMs ?? 90_000));
+  const timeout = () => remainingStartupMs(deadlineMs, signal);
   await page.goto(buildRuntimeUrl(baseUrl, { agentName, extraSearchParams }), {
-    waitUntil: "domcontentloaded"
+    waitUntil: "domcontentloaded", timeout: timeout()
   });
-
-  return await waitForRuntimeReady(page);
+  return await waitForRuntimeReady(page, { timeoutMs: timeout() });
 }
 
 export async function gotoAgentRuntime(page, options = {}) {
+  if (!options.baseUrl) throw new Error("BASE_URL must explicitly identify the game deployment.");
+  const deadlineMs = Math.min(options.deadlineMs ?? Infinity, Date.now() + (options.timeoutMs ?? 90_000));
+  const abort = () => { void releaseInputs(page).catch(() => {}).finally(() => page.close().catch(() => {})); };
+  options.signal?.addEventListener("abort", abort, { once: true });
   try {
-    return await gotoAgentRuntimeViaUrl(page, options);
-  } catch {
-    return await gotoAgentRuntimeViaUi(page, options);
+    remainingStartupMs(deadlineMs, options.signal);
+    let state;
+    try {
+      state = await gotoAgentRuntimeViaUrl(page, { ...options, deadlineMs, timeoutMs: Math.max(1, deadlineMs - Date.now()) });
+    } catch (error) {
+      if (Date.now() >= deadlineMs || options.signal?.aborted) throw error;
+      await releaseInputs(page).catch(() => {});
+      state = await gotoAgentRuntimeViaUi(page, { ...options, deadlineMs, timeoutMs: Math.max(1, deadlineMs - Date.now()) });
+    }
+    validatePublicObservation(state);
+    const api = await getAgentApiStatus(page);
+    if (!api.agentApplyAction) throw compatibilityError("Required window.agent_apply_action is unavailable.");
+    return state;
+  } catch (error) {
+    await releaseInputs(page).catch(() => {});
+    if (error.code === "contract_mismatch") throw error;
+    error.code = options.signal?.aborted ? "stopped"
+      : Date.now() >= (options.deadlineMs ?? Infinity) ? "budget_exhausted" : "startup_failure";
+    throw error;
+  } finally {
+    options.signal?.removeEventListener("abort", abort);
   }
+}
+
+export function compatibilityError(message) {
+  return Object.assign(new Error(`Public game compatibility error: ${message}`), { code: "contract_mismatch" });
+}
+
+export function validatePublicObservation(state) {
+  if (state?.apiVersion !== PUBLIC_AGENT_API_VERSION || state?.contract !== PUBLIC_AGENT_CONTRACT) {
+    throw compatibilityError(`Expected apiVersion=${PUBLIC_AGENT_API_VERSION} and contract=${PUBLIC_AGENT_CONTRACT}.`);
+  }
+  if (typeof state.gameplay?.alive !== "boolean") {
+    throw compatibilityError("Required gameplay.alive must be a boolean.");
+  }
+  const perception = state.perception;
+  if (!perception || !Array.isArray(perception.visibleTargets) || typeof perception.movementBlocked !== "boolean") {
+    throw compatibilityError("Required perception.visibleTargets[] and perception.movementBlocked are missing or invalid. Deploy the coordinated visible-target game contract.");
+  }
+  if (perception.visibleTargets.some((target) => !target || typeof target.id !== "string"
+    || !Number.isFinite(target.yawOffsetDeg) || !Number.isFinite(target.pitchOffsetDeg))) {
+    throw compatibilityError("Every visible target requires a string id and finite yawOffsetDeg/pitchOffsetDeg.");
+  }
+  return state;
 }
 
 function clamp(value, min, max) {
@@ -278,8 +336,8 @@ function clamp(value, min, max) {
 
 function sanitizeAction(action = {}) {
   return {
-    moveX: clamp(action.moveX, -1, 1),
-    moveZ: clamp(action.moveZ, -1, 1),
+    moveX: clamp(action.moveX, -1, 1) ?? 0,
+    moveZ: clamp(action.moveZ, -1, 1) ?? 0,
     lookYawDelta: Number.isFinite(action.lookYawDelta) ? Number(action.lookYawDelta) : undefined,
     lookPitchDelta: Number.isFinite(action.lookPitchDelta) ? Number(action.lookPitchDelta) : undefined,
     jump: Boolean(action.jump),
@@ -292,11 +350,22 @@ function sanitizeAction(action = {}) {
 export async function applyAction(page, action) {
   const nextAction = sanitizeAction(action);
 
-  await page.evaluate((payload) => {
-    window.agent_apply_action?.(payload);
-  }, nextAction);
+  try {
+    await page.evaluate((payload) => {
+      if (typeof window.agent_apply_action !== "function") throw new Error("Required window.agent_apply_action is unavailable.");
+      window.agent_apply_action(payload);
+    }, nextAction);
+  } catch (error) {
+    if (error.message.includes("window.agent_apply_action is unavailable")) throw compatibilityError(error.message);
+    throw error;
+  }
 }
 
+export async function releaseInputs(page) {
+  await applyAction(page, { moveX: 0, moveZ: 0, lookYawDelta: 0, lookPitchDelta: 0, fire: false, reload: false, jump: false, crouch: false });
+}
+
+// Explicit deterministic stepping helper; never used by the normal real-time loop.
 export async function advance(page, ms = 500) {
   const usedAdvanceTime = await page.evaluate(async (stepMs) => {
     if (typeof window.advanceTime !== "function") return false;
@@ -311,39 +380,43 @@ export async function advance(page, ms = 500) {
   return usedAdvanceTime;
 }
 
-export async function clickPlayAgainIfVisible(page) {
+export async function clickPlayAgainIfVisible(page, { timeoutMs = 20_000 } = {}) {
   const button = page.locator(PUBLIC_AGENT_STABLE_SELECTORS.playAgain);
   const visible = await button.isVisible().catch(() => false);
   if (!visible) return false;
 
-  await button.click().catch(() => {});
+  await button.click({ timeout: Math.max(1, timeoutMs) });
   return true;
 }
 
 export async function ensureFreshRun(page, options = {}) {
-  const {
-    waitMs = 500,
-    timeoutTicks = 80
-  } = options;
-
-  for (let attempt = 0; attempt < timeoutTicks; attempt += 1) {
-    const state = await readState(page);
-
-    if (isRuntimeReady(state) && !isDead(state) && (state.score?.current ?? 0) === 0) {
-      return state;
-    }
-
-    if (isDead(state)) {
-      const clicked = await clickPlayAgainIfVisible(page);
-      if (clicked) {
-        return await waitForRespawn(page);
+  const { waitMs = 125, timeoutTicks = 80, signal } = options;
+  const deadlineMs = Math.min(options.deadlineMs ?? Infinity,
+    Date.now() + (options.timeoutMs ?? timeoutTicks * waitMs));
+  try {
+    await releaseInputs(page);
+    for (;;) {
+      if (signal?.aborted) throw Object.assign(new Error("Retry stopped."), { code: "stopped" });
+      if (Date.now() >= deadlineMs) {
+        throw Object.assign(new Error("Unable to recover to a fresh living run within the time budget."), {
+          code: Date.now() >= (options.deadlineMs ?? Infinity) ? "budget_exhausted" : "startup_failure"
+        });
       }
+      const state = await readState(page);
+      if (isRuntimeReady(state)) {
+        validatePublicObservation(state);
+        if (!isDead(state) && state.score?.current === 0) return state;
+        if (isDead(state)) await clickPlayAgainIfVisible(page, { timeoutMs: deadlineMs - Date.now() });
+      }
+      await delay(Math.max(0, Math.min(waitMs, deadlineMs - Date.now())));
     }
-
-    await advance(page, waitMs);
+  } catch (error) {
+    if (signal?.aborted) error.code = "stopped";
+    else if (Date.now() >= (options.deadlineMs ?? Infinity)) error.code = "budget_exhausted";
+    throw error;
+  } finally {
+    await releaseInputs(page).catch(() => {});
   }
-
-  throw new Error("Unable to recover to a fresh living run.");
 }
 
 export {

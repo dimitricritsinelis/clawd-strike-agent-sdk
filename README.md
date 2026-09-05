@@ -1,202 +1,73 @@
 # Clawd Strike Agent SDK
 
-Starter kit for browser agents that must bootstrap from public context only, enter Agent Mode, play repeated attempts, learn between attempts, and retry without widening the fairness boundary.
+Run a browser agent, save its results, edit one policy behavior, and compare it with the saved champion. The surrounding agent supplies reasoning and code edits. The SDK supplies browser control, a visible-target baseline, episode evidence, and score-based evaluation. No embedded LLM, API key, or learning service is required.
 
-## Quickstart
+## Start
+
+Read the game's `/skills.md` for its public contract, then run:
 
 ```bash
 pnpm install
 pnpm exec playwright install --with-deps chromium
+export BASE_URL='https://your-configured-test-deployment.example/'
 pnpm agent:run
 ```
 
-If you want the individual steps instead of the single-command flow:
+Replace the example URL with the explicitly configured test deployment or an isolated server you own. The SDK does not start a game server. Never assume an existing developer server belongs to this run. `BASE_URL` is required unless `baseUrl` is explicitly set in `config/learning.config.json`.
 
-```bash
-pnpm contract:check
-pnpm smoke:no-context
-pnpm agent:baseline
-pnpm agent:learn
-```
+`pnpm agent:run` resumes the accepted policy and appends history. The first invocation plays the baseline. After you edit `src/policies/visible-target.mjs`, the next invocation replays the saved champion and evaluates the edited candidate. Keep `output/self-improving-runner/` between sessions. No additional documentation chain is required for startup.
 
-## Stable command contract
+The coordinated game contract must expose `perception.visibleTargets` and `perception.movementBlocked`. Missing perception stops play with a compatibility error. The canonical game `/skills.md` fetched on 2026-09-05 still lacks these fields. The checked-in `skills.md` documents the required SDK contract; mirroring remains pending the coordinated canonical update.
 
-| Command | Purpose | Main outputs |
-| --- | --- | --- |
-| `pnpm contract:check` | Validate command, file, skills, and runtime-contract drift | Console report |
-| `pnpm smoke:no-context` | Prove a blank agent can launch, observe, die, and retry on the public surface | `output/no-context-smoke/<timestamp>/` |
-| `pnpm agent:baseline` | Run one baseline attempt with the default policy | `output/baseline/` |
-| `pnpm agent:learn` | Run baseline -> compare -> promote/reject -> retry with durable disk artifacts | `output/self-improving-runner/` |
-| `pnpm agent:run` | Run the full post-install sequence from a clean managed output state and fail loudly if the benchmark target is not met | baseline + learning outputs |
+## Commands and budgets
 
-## Required reading order
+| Command | Purpose |
+| --- | --- |
+| `pnpm agent:run` | Normal entry point: resume, play, and evaluate an edited policy |
+| `pnpm agent:learn` | Run the same gameplay/evaluation workflow directly |
+| `pnpm agent:baseline` | Record a baseline batch (default five attempts) |
+| `pnpm smoke:no-context` | Check public startup, completed death, and retry |
+| `pnpm contract:check` | Check local files, commands, and contract consistency |
+| `pnpm ci:check` | Run local contract, unit, and syntax checks |
 
-Inside this repo, read files in this order:
+Use `HEADLESS=false pnpm agent:run` to watch the same controller and browser adapter. `BATCH_EPISODES` sets both comparison batch sizes (default `5`); the default session allows `10` completed attempts. Set `ATTEMPT_BUDGET` and `TIME_BUDGET_MINUTES` to bound a session. Attempts count completed deaths only. A timeout or interrupted episode is not a completed attempt and cannot support promotion. Valid earlier results remain saved.
 
-1. `AGENTS.md` or `CLAUDE.md`
-2. `docs/PUBLIC_CONTRACT.md`
-3. `MEMORY.md`
-4. `SELF_LEARNING.md`
-5. `docs/OUTPUTS.md`
-6. `docs/POLICY_SCHEMA.md`
-7. `docs/TROUBLESHOOTING.md`
+`BASELINE_DEATHS=1 pnpm agent:baseline` retains the one-attempt baseline option. `BATCH_EPISODES` controls normal comparison batches independently.
 
-`AGENTS.md` and `CLAUDE.md` are intentionally identical.
+The normal loop observes and applies actions about every `125ms` using elapsed real time. The game advances itself; this loop never calls `advanceTime()`. Movement and held buttons persist until replaced, while look deltas apply per call. The adapter explicitly releases held inputs before retry, shutdown, or other execution-state changes. Headless mode uses the same timing; hidden-tab throttling is not compensated with simulated time.
 
-## Learning phases
+The default episode and smoke limit is `2400 × 125ms`, approximately five minutes, rather than the former fifteen-second smoke window. Browser startup and retry have separate failure reporting.
 
-The default learner is explicitly phase-aware:
+## Improve one behavior at a time
 
-1. `bootstrap_hit`
-2. `bootstrap_kill`
-3. `stabilize_score`
+1. Play a batch and inspect `episodes.jsonl` and the latest candidate summary.
+2. Check whether the baseline got at least one kill in five completed attempts. If it did not, inspect acquisition evidence before spending a larger budget.
+3. Change one behavior in `src/policies/visible-target.mjs`, such as aiming, reload timing, or blocked-movement recovery.
+4. Run `pnpm agent:run` again. The SDK re-evaluates the saved champion under the same current conditions, then evaluates the candidate over an equal-sized completed batch, defaulting to five episodes each.
+5. Retain only a strictly higher mean final score. Ties, unequal batches, incomplete evaluations, and invalid runs never promote. Repeat within the user's budget.
 
-Before the first hit, the SDK optimizes for acquisition, not survival. Before the first kill, it optimizes for conversion, not cosmetic scoreless longevity. `baselineMet` records whether a run achieved at least `1` kill within `5` completed attempts. The current starter should be treated as an evolving baseline, not a proven benchmark winner, until repeated benchmark runs pass.
+Kills, hits, shots, accuracy, and survival are diagnostics. The best individual score is stored separately from the mean used for promotion. Larger batches cannot win through larger raw totals. Re-evaluation reduces stale-evidence bias but is not a guarantee against random variation or game changes during a run. No individual attempt is promised to beat the last.
 
-## Run config
+## Saved evidence
 
-Editable config lives in `config/learning.config.json`.
+Under `output/self-improving-runner/`:
 
-Required fields:
+- `champion-policy.json`: accepted policy identity and recoverable code snapshot.
+- `episodes.jsonl`: append-only results, including score, kills, hits, shots, survival, death cause when public, policy identity, and bounded observation/action history near death.
+- `candidate-summaries/*.json`: unique, immutable evaluation evidence, policy snapshots, execution context, scores, and promotion decision.
+- `scoreboard.json`: durable best-ever individual score.
+- `resolved-run-config.json` and `latest-session-summary.json`: latest configuration, stop reason, comparison, and saved locations.
 
-- `agentName`
-- `modelProvider`
-- `modelName`
-- `headless`
-- `attemptBudget` or `timeBudgetMinutes`
-- `learningEnabled`
+The browser's `score.best` is session-local and is not durable learning. Historical results describe their recorded URL, public profile/tuning identity, and settings; they do not demonstrate performance on a later game revision. First-run baseline evidence demonstrates gameplay only. Policy improvement requires a completed comparison that retains an edited candidate.
 
-Optional fields:
+Separate observations from hypotheses when reviewing the death history. For example, a visible target and repeated large aim offsets are evidence; “aiming caused this death” is an inference requiring a targeted comparison. `MEMORY.md` and `SELF_LEARNING.md` are optional human/agent notes, not generated proof.
 
-- `userNotes`
-- `watchMode`
-- `candidateScreenDeaths`
-- `bootstrapCatalogSize`
-- `bootstrapConfirmCount`
-- `bootstrapRescreenThreshold`
+## Public boundary
 
-The resolved config is always written to `output/self-improving-runner/resolved-run-config.json` before learning starts.
+Use public selectors, documented globals, ordinary screenshots, and visible-only target cues. Target IDs are stable within an episode; offsets describe visible, unoccluded aim points and have the same signs as `lookYawDelta` and `lookPitchDelta`. Reset target memory on retry.
 
-Default contact-first run profile:
+Hidden coordinates, occluded enemies, routes, seeds, private debug truth, and validation internals remain prohibited. Missing perception is a contract mismatch; do not replace it with blind aiming or private globals.
 
-- `stepMs: 125`
-- `baselineDeaths: 5`
-- `candidateScreenDeaths: 2`
-- `candidateDeaths: 6`
-- `bootstrapCatalogSize: 6`
-- `bootstrapConfirmCount: 2`
-- `attemptBudget: 54`
-- `stagnationLimit: 10`
+For adapter verification against an isolated synthetic public-contract fixture, run `node --test test/browser.integration.mjs`. It exercises headed and headless browsers; headed mode needs a display. Fixture results demonstrate SDK mechanics, not game kills or policy improvement. Live gameplay still needs the configured game deployment and coordinated perception.
 
-## Durable outputs
-
-`pnpm agent:learn` must write:
-
-- `output/self-improving-runner/champion-policy.json`
-- `output/self-improving-runner/episodes.jsonl`
-- `output/self-improving-runner/latest-session-summary.json`
-- `output/self-improving-runner/candidate-summaries/*.json`
-
-Supporting artifacts:
-
-- `output/self-improving-runner/semantic-memory.json`
-- `output/self-improving-runner/hall-of-fame.json`
-- `output/self-improving-runner/scoreboard.json`
-- `MEMORY.md`
-- `SELF_LEARNING.md`
-
-If the required four learning artifacts are missing, the run is not durable self-improvement.
-
-`pnpm agent:run` also treats a benchmark miss as a failure, even if the artifact contract is satisfied.
-
-Candidate summary ids are session-scoped and unique across repeated runs. Existing summaries are never overwritten because candidate summaries are written with exclusive create semantics.
-
-## Fairness boundary
-
-Use only the public contract:
-
-- public selectors
-- public globals
-- public state
-- public retry flow
-- durable artifacts written by this SDK in your workspace
-
-Do **not** use:
-
-- coordinates
-- enemy positions
-- routes
-- seeds
-- hidden debug truth
-- screenshots, OCR, or pixel aiming
-
-`lookPitchDelta` is public and allowed. Public feedback events such as `feedback.recentEvents` are allowed when present.
-
-The default controller is expected to use:
-
-- `lookYawDelta`
-- `lookPitchDelta`
-- `feedback.recentEvents` when present
-
-If `recentEvents` is missing, the controller must degrade gracefully to public-state-only behavior.
-
-## Zero-hit escalation rule
-
-If the first 5-attempt batch is completely hitless:
-
-- record the failure honestly
-- keep the artifacts
-- stop pretending config-only survival gains are learning
-- escalate to bounded policy-level acquisition changes in `src/policies/**`
-
-Do not edit runtime wrappers or fairness-boundary files unless a human explicitly asks for that level of change.
-
-## Bootstrap catalog
-
-The default learner does not rely only on tiny mutations around one seed.
-
-In contact bootstrap phases it screens a small catalog of public-safe opening styles, confirms the best 1 to 2 candidates on fuller batches, and only then mutates around whichever policy actually produced contact evidence.
-
-## Safe edit surface
-
-Safe by default:
-
-- `MEMORY.md`
-- `SELF_LEARNING.md`
-- `config/*.json`
-- `output/**`
-
-Allowed with caution:
-
-- `src/policies/**`
-
-Locked by default:
-
-- `src/runtime/**`
-- `skills.md`
-- `docs/PUBLIC_CONTRACT.md`
-- `sdk.contract.json`
-- `scripts/validate-sdk-contract.mjs`
-
-## Repo map
-
-- `skills.md`
-  - SDK mirror of the canonical game-side contract
-- `AGENTS.md`, `CLAUDE.md`
-  - instructions for contextless agents
-- `config/`
-  - safe learning and policy defaults
-- `docs/`
-  - contract, outputs, schema, troubleshooting, and optional tuning guides
-- `examples/`
-  - smoke, baseline, and self-improving entrypoints
-- `src/policies/`
-  - controller implementation and normalization
-- `src/learn/`
-  - comparison, mutation, storage, and memory-doc helpers
-- `src/runtime/`
-  - browser/runtime wrappers that stay contract-bound
-
-## Product stance
-
-This SDK is meant to help a public-only agent reach real combat acquisition, persist its learning honestly, and keep improving without becoming an omniscient bot.
+Optional references: [public contract](docs/PUBLIC_CONTRACT.md), [policy](docs/POLICY_SCHEMA.md), [outputs](docs/OUTPUTS.md), and [troubleshooting](docs/TROUBLESHOOTING.md).

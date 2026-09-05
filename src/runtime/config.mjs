@@ -1,110 +1,65 @@
 import path from "node:path";
-import { PUBLIC_AGENT_CANONICAL_HOST } from "./contract.mjs";
-import { DEFAULT_ADAPTIVE_SWEEPER_POLICY, normalizeAdaptiveSweeperPolicy } from "../policies/adaptive-sweeper.mjs";
+import { DEFAULT_VIEWPORT } from "./browser.mjs";
 import { readJsonIfExists, writeJson } from "../utils/fs.mjs";
+import { DEFAULT_ADAPTIVE_SWEEPER_POLICY, normalizeAdaptiveSweeperPolicy } from "../policies/adaptive-sweeper.mjs";
 
-const PROJECT_ROOT = process.cwd();
-
-function timestampId() {
-  return new Date().toISOString().replace(/[:.]/g, "-");
+const ROOT = process.cwd();
+const env = (name, fallback) => process.env[name] || fallback;
+function number(name, fallback, minimum = 0, integer = false) {
+  const value = Number(env(name, fallback));
+  if (!Number.isFinite(value) || value < minimum || (integer && !Number.isInteger(value))) {
+    throw new Error(`${name} must be ${integer ? "an integer" : "a finite number"} >= ${minimum}.`);
+  }
+  return value;
 }
-
-function envString(name, fallback) {
-  const raw = process.env[name];
-  return typeof raw === "string" && raw.length > 0 ? raw : fallback;
+function boolean(name, fallback) {
+  const value = String(env(name, fallback));
+  if (!/^(true|false|1|0|yes|no)$/i.test(value)) throw new Error(`${name} must be true or false.`);
+  return /^(true|1|yes)$/i.test(value);
 }
-
-function envBoolean(name, fallback) {
-  const raw = process.env[name];
-  if (typeof raw !== "string" || raw.length === 0) return fallback;
-  return !/^(0|false|no)$/i.test(raw);
+export async function loadLearningConfig(configPath = path.resolve(ROOT, "config/learning.config.json")) {
+  return readJsonIfExists(configPath, {});
 }
-
-function envNumber(name, fallback) {
-  const raw = process.env[name];
-  if (typeof raw !== "string" || raw.length === 0) return fallback;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : fallback;
+// Kept for callers of the optional legacy parameter tuner.
+export async function loadDefaultPolicy(policyPath = path.resolve(ROOT, "config/default-policy.json")) {
+  return normalizeAdaptiveSweeperPolicy(await readJsonIfExists(policyPath, DEFAULT_ADAPTIVE_SWEEPER_POLICY));
 }
-
-export async function loadLearningConfig(configPath = path.resolve(PROJECT_ROOT, "config/learning.config.json")) {
-  return await readJsonIfExists(configPath, {});
-}
-
-export async function loadDefaultPolicy(policyPath = path.resolve(PROJECT_ROOT, "config/default-policy.json")) {
-  const raw = await readJsonIfExists(policyPath, DEFAULT_ADAPTIVE_SWEEPER_POLICY);
-  return normalizeAdaptiveSweeperPolicy(raw);
-}
-
-function resolveBaseConfig(fileConfig = {}) {
-  const watchMode = envBoolean("WATCH_MODE", Boolean(fileConfig.watchMode ?? false));
-  const headless = envBoolean("HEADLESS", watchMode ? false : Boolean(fileConfig.headless ?? true));
-
+async function resolveConfig(mode) {
+  const file = await loadLearningConfig();
+  const rawUrl = env("BASE_URL", file.baseUrl);
+  if (!rawUrl) throw new Error("BASE_URL is required. Configure an authorized game deployment explicitly.");
+  const url = new URL(rawUrl);
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+    throw new Error("BASE_URL must be an HTTP(S) URL without credentials.");
+  }
+  const watchMode = boolean("WATCH_MODE", file.watchMode ?? false);
+  const output = mode === "smoke"
+    ? env("SMOKE_OUTPUT_DIR", `output/no-context-smoke/${new Date().toISOString().replace(/[:.]/g, "-")}`)
+    : mode === "baseline"
+      ? env("BASELINE_OUTPUT_DIR", file.baselineOutputDir ?? "output/baseline")
+      : env("OUTPUT_DIR", file.outputDir ?? "output/self-improving-runner");
   return {
-    baseUrl: new URL(envString("BASE_URL", fileConfig.baseUrl ?? PUBLIC_AGENT_CANONICAL_HOST)).toString(),
-    agentName: envString("AGENT_NAME", fileConfig.agentName ?? "ClawdLearner"),
-    modelProvider: envString("MODEL_PROVIDER", fileConfig.modelProvider ?? "metadata-only"),
-    modelName: envString("MODEL_NAME", fileConfig.modelName ?? "adaptive-sweeper"),
-    headless,
-    watchMode,
-    attemptBudget: Math.max(1, Math.round(envNumber("ATTEMPT_BUDGET", Number(fileConfig.attemptBudget ?? 54)))),
-    timeBudgetMinutes: Math.max(0, envNumber("TIME_BUDGET_MINUTES", Number(fileConfig.timeBudgetMinutes ?? 20))),
-    learningEnabled: envBoolean("LEARNING_ENABLED", Boolean(fileConfig.learningEnabled ?? true)),
-    userNotes: envString("USER_NOTES", fileConfig.userNotes ?? ""),
-    stepMs: Math.max(100, Math.round(envNumber("STEP_MS", Number(fileConfig.stepMs ?? 125)))),
-    maxStepsPerEpisode: Math.max(100, Math.round(envNumber("MAX_STEPS_PER_EPISODE", Number(fileConfig.maxStepsPerEpisode ?? 960)))),
-    baselineDeaths: Math.max(1, Math.round(envNumber("BASELINE_DEATHS", Number(fileConfig.baselineDeaths ?? 5)))),
-    candidateScreenDeaths: Math.max(1, Math.round(envNumber("CANDIDATE_SCREEN_DEATHS", Number(fileConfig.candidateScreenDeaths ?? 2)))),
-    candidateDeaths: Math.max(1, Math.round(envNumber("CANDIDATE_DEATHS", Number(fileConfig.candidateDeaths ?? 6)))),
-    bootstrapCatalogSize: Math.max(1, Math.round(envNumber("BOOTSTRAP_CATALOG_SIZE", Number(fileConfig.bootstrapCatalogSize ?? 6)))),
-    bootstrapConfirmCount: Math.max(1, Math.round(envNumber("BOOTSTRAP_CONFIRM_COUNT", Number(fileConfig.bootstrapConfirmCount ?? 2)))),
-    bootstrapRescreenThreshold: Math.max(1, Math.round(envNumber("BOOTSTRAP_RESCREEN_THRESHOLD", Number(fileConfig.bootstrapRescreenThreshold ?? 3)))),
-    maxCandidates: Math.max(1, Math.round(envNumber("MAX_CANDIDATES", Number(fileConfig.maxCandidates ?? 40)))),
-    stagnationLimit: Math.max(1, Math.round(envNumber("STAGNATION_LIMIT", Number(fileConfig.stagnationLimit ?? 10)))),
-    minScoreDelta: envNumber("MIN_SCORE_DELTA", Number(fileConfig.minScoreDelta ?? 0)),
-    rngSeed: envNumber("RNG_SEED", Number(fileConfig.rngSeed ?? Date.now())),
-    userDataDir: path.resolve(PROJECT_ROOT, envString("USER_DATA_DIR", fileConfig.userDataDir ?? ".agent-profile")),
-    outputDir: path.resolve(PROJECT_ROOT, envString("OUTPUT_DIR", fileConfig.outputDir ?? "output/self-improving-runner")),
-    baselineOutputDir: path.resolve(PROJECT_ROOT, envString("BASELINE_OUTPUT_DIR", fileConfig.baselineOutputDir ?? "output/baseline")),
-    saveMemoryDocs: envBoolean("SAVE_MEMORY_DOCS", Boolean(fileConfig.saveMemoryDocs ?? true)),
-    requiredSmokeDeaths: Math.max(1, Math.round(envNumber("REQUIRED_DEATHS", Number(fileConfig.requiredSmokeDeaths ?? 1)))),
-    smokeMaxSteps: Math.max(10, Math.round(envNumber("SMOKE_MAX_STEPS", Number(fileConfig.smokeMaxSteps ?? 120))))
+    mode, baseUrl: url.toString(), viewport: DEFAULT_VIEWPORT,
+    agentName: env("AGENT_NAME", file.agentName ?? "ClawdLearner"),
+    modelProvider: env("MODEL_PROVIDER", file.modelProvider ?? "metadata-only"),
+    modelName: env("MODEL_NAME", file.modelName ?? "visible-target"),
+    watchMode, headless: boolean("HEADLESS", watchMode ? false : file.headless ?? true),
+    attemptBudget: number("ATTEMPT_BUDGET", file.attemptBudget ?? 10, 1, true),
+    timeBudgetMinutes: number("TIME_BUDGET_MINUTES", file.timeBudgetMinutes ?? 20),
+    learningEnabled: boolean("LEARNING_ENABLED", file.learningEnabled ?? true),
+    stepMs: number("STEP_MS", file.stepMs ?? 125, 1, true),
+    maxStepsPerEpisode: number("MAX_STEPS_PER_EPISODE", file.maxStepsPerEpisode ?? 2400, 1, true),
+    batchEpisodes: number("BATCH_EPISODES", file.batchEpisodes ?? 5, 1, true),
+    targetEpisodes: number("BASELINE_DEATHS", file.baselineDeaths ?? 5, 1, true),
+    requiredSmokeDeaths: number("REQUIRED_DEATHS", file.requiredSmokeDeaths ?? 1, 1, true),
+    smokeMaxSteps: number("SMOKE_MAX_STEPS", file.smokeMaxSteps ?? 2400, 1, true),
+    outputDir: path.resolve(ROOT, output),
+    userNotes: env("USER_NOTES", file.userNotes ?? "")
   };
 }
-
-export async function resolveSmokeConfig() {
-  const fileConfig = await loadLearningConfig();
-  const base = resolveBaseConfig(fileConfig);
-  return {
-    ...base,
-    mode: "smoke",
-    outputDir: path.resolve(PROJECT_ROOT, envString("SMOKE_OUTPUT_DIR", `output/no-context-smoke/${timestampId()}`))
-  };
-}
-
-export async function resolveBaselineConfig() {
-  const fileConfig = await loadLearningConfig();
-  const base = resolveBaseConfig(fileConfig);
-  return {
-    ...base,
-    mode: "baseline",
-    outputDir: base.baselineOutputDir,
-    targetEpisodes: 1
-  };
-}
-
-export async function resolveLearningRunConfig() {
-  const fileConfig = await loadLearningConfig();
-  const base = resolveBaseConfig(fileConfig);
-
-  return {
-    ...base,
-    mode: "learn",
-    attemptBudget: Math.max(base.attemptBudget, base.baselineDeaths),
-    outputDir: path.resolve(PROJECT_ROOT, envString("OUTPUT_DIR", fileConfig.outputDir ?? "output/self-improving-runner"))
-  };
-}
-
+export const resolveSmokeConfig = () => resolveConfig("smoke");
+export const resolveBaselineConfig = () => resolveConfig("baseline");
+export const resolveLearningRunConfig = () => resolveConfig("learn");
 export async function persistResolvedConfig(outputDir, config) {
   await writeJson(path.join(outputDir, "resolved-run-config.json"), config);
 }

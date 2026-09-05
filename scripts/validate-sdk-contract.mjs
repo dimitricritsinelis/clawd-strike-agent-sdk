@@ -56,18 +56,6 @@ function buildCaseIndex(inventory) {
   return index;
 }
 
-function assertOrderedSnippets(text, snippets, label) {
-  let cursor = -1;
-
-  for (const snippet of snippets) {
-    const index = text.indexOf(snippet, cursor + 1);
-    if (index === -1) {
-      throw new Error(`${label} is missing required content: ${snippet}`);
-    }
-    cursor = index;
-  }
-}
-
 async function main() {
   const manifest = await readJson("sdk.contract.json");
   const packageJson = await readJson("package.json");
@@ -120,22 +108,18 @@ async function main() {
   }
 
   const skillsText = await readText("skills.md");
-  assertOrderedSnippets(skillsText, [
-    "1. `README.md`",
-    "2. `AGENTS.md` or `CLAUDE.md`",
-    "3. `docs/PUBLIC_CONTRACT.md`",
-    "4. `MEMORY.md`",
-    "5. `SELF_LEARNING.md`",
-    "6. `docs/OUTPUTS.md`",
-    "7. `docs/POLICY_SCHEMA.md`",
-    "8. `docs/TROUBLESHOOTING.md`"
-  ], "skills.md");
-
   for (const requiredSnippet of [
     manifest.companionRepo.url,
     "pnpm smoke:no-context",
     "pnpm agent:baseline",
     "pnpm agent:learn",
+    "pnpm agent:run",
+    "BASE_URL",
+    "perception",
+    "visibleTargets",
+    "movementBlocked",
+    "lookYawDelta",
+    "lookPitchDelta",
     manifest.runtimeContract.name,
     ...manifest.requiredLearningOutputs
   ]) {

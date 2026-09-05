@@ -1,132 +1,36 @@
-# PUBLIC_CONTRACT.md
+# Public contract reference
 
-Authoritative source: root `skills.md`, which mirrors the game-side `/skills.md` contract.
+Use the configured game's `/skills.md` as the canonical game contract. The canonical file fetched on 2026-09-05 still lacks the required `perception`, `visibleTargets`, and `movementBlocked` fields. Root `skills.md` documents the required coordinated SDK contract; mirroring awaits the canonical update.
 
-This file is the operational reference for SDK users.
-
-## Versioning
-
-| Field | Expected value |
-| --- | --- |
-| Runtime `apiVersion` | `1` |
-| Runtime `contract` | `public-agent-v1` |
-| Workflow contract | `agentic-gameplay-v1` |
-| Canonical host | `https://clawd-strike.vercel.app/` |
-
-If either runtime version value changes, stop and report a contract mismatch before continuing.
-
-## Allowed observations
-
-Allowed public observations include:
-
-- `mode`
-- `runtimeReady`
-- `gameplay.alive`
-- `gameplay.gameOverVisible`
-- `health`
-- `ammo.mag`
-- `ammo.reserve`
-- `ammo.reloading`
-- `score.current`
-- `score.best`
-- `score.lastRun`
-- `sharedChampion`
-- `lastRunSummary`
-- optional `feedback.recentEvents`
-
-## Allowed actions
-
-Supported action payload:
+Expected runtime identity: `apiVersion: 1`, `contract: "public-agent-v1"`. Stop on a mismatch. The normal SDK additionally requires:
 
 ```js
-{
-  moveX?: number,
-  moveZ?: number,
-  lookYawDelta?: number,
-  lookPitchDelta?: number,
-  jump?: boolean,
-  fire?: boolean,
-  reload?: boolean,
-  crouch?: boolean
+perception: {
+  visibleTargets: [
+    { id: "stable-within-episode", yawOffsetDeg: 3, pitchOffsetDeg: -1 }
+  ],
+  movementBlocked: false
 }
 ```
 
-Use only `window.agent_apply_action(action)` to write actions.
+Visible targets are unoccluded aim points. IDs are stable within an episode. Offset signs match `lookYawDelta` and `lookPitchDelta`. Offsets must be finite numbers. Missing or malformed perception is a compatibility error. Optional `feedback.recentEvents` is public; its absence is not an error.
 
-## Stable selectors
-
-| Purpose | Selector |
+| Purpose | Public entry point |
 | --- | --- |
-| Agent mode button | `[data-testid="agent-mode"]` |
-| Enter Agent mode button | `[data-testid="play"]` |
-| Agent name input | `[data-testid="agent-name"]` |
-| Retry button | `[data-testid="play-again"]` |
+| Primary observation | `window.agent_observe()` |
+| Compatibility observation | `window.render_game_to_text()` |
+| Action | `window.agent_apply_action(action)` |
+| Agent menu | `[data-testid="agent-mode"]` |
+| Enter Agent Mode | `[data-testid="play"]` |
+| Name | `[data-testid="agent-name"]` |
+| Retry | `[data-testid="play-again"]` |
 
-## Stable runtime entrypoints
+Use a configured `BASE_URL`. The public fast path adds `?autostart=agent&name=...`; the documented menu flow is the fallback. Wait for runtime-ready and alive state before controlling play.
 
-| Purpose | Global |
-| --- | --- |
-| Primary state reader | `window.agent_observe()` |
-| Compatibility state reader | `window.render_game_to_text()` |
-| Action writer | `window.agent_apply_action(action)` |
-| Deterministic stepping fallback | `window.advanceTime(ms)` |
+Actions contain `moveX`, `moveZ` in `-1..1`, `lookYawDelta`, `lookPitchDelta` in degrees per call, and boolean `jump`, `fire`, `reload`, `crouch`. Movement and held buttons persist until replaced. Explicitly release all held inputs before retry, pause, shutdown, and other execution-state changes.
 
-## Safe bootstrap
+The same headed/headless adapter observes and acts at about 8 Hz using elapsed real time. The normal loop never calls `advanceTime()` because the game already advances. Do not compensate for hidden-tab throttling with simulated time.
 
-Preferred order:
+At death (`gameplay.alive === false` or `gameplay.gameOverVisible === true`), record `score.lastRun` and `lastRunSummary`, release inputs, then use the retry button when available. Resume only after the public runtime reports alive and ready; reset all episode-local policy memory. Startup failure, compatibility error, episode timeout, and completed death are separate outcomes.
 
-1. try the fast-path URL with `?autostart=agent&name=...`
-2. if that fails, fall back to the documented UI selectors
-3. wait for `mode === "runtime"` and `runtimeReady === true`
-4. begin the gameplay loop
-
-## Fairness boundary
-
-The public surface does **not** expose:
-
-- coordinates
-- map zones
-- landmark ids
-- enemy positions
-- routes
-- seeds
-- debug or bounds data
-- hidden line-of-sight truth
-
-Do not infer or claim access to any of those surfaces.
-
-## Public gameplay facts
-
-These facts are safe to use because they are public product behavior:
-
-- gameplay is wave-based survival/combat
-- kill value scales by wave
-- headshot bonus equals current kill value
-- each new wave restores full health to `100`
-- each new wave restores full ammo to `30/120`
-- hunt pressure ramps after `10s` and is full by `30s`
-
-## Retry contract
-
-When dead:
-
-1. record `score.lastRun`
-2. record `lastRunSummary`
-3. wait for `[data-testid="play-again"]`
-4. click retry
-5. wait until state is runtime-ready and alive again
-6. confirm the new run restarts from:
-   - wave `1`
-   - full health
-   - fresh ammo
-   - `score.current === 0`
-
-## Hidden-tab guidance
-
-- visible tabs can run around `6-10Hz` and the starter defaults near `125ms` per step
-- hidden or minimized tabs should slow down to around `2Hz`
-- when hidden, prefer coarse stepping such as `await window.advanceTime(500)`
-
-## SDK rule
-
-The SDK may only wrap the public contract. It may not widen the contract or add hidden truth.
+Ordinary screenshots and visible-only target cues are allowed. Hidden coordinates, occluded enemies, routes, seeds, private debug truth, and validation internals remain prohibited. The SDK may wrap the public contract but may not widen it.

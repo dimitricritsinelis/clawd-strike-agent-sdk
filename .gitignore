@@ -6,6 +6,8 @@ test-results/
 
 output/*
 !output/self-improving-runner/
+output/self-improving-runner/*
 !output/self-improving-runner/.gitkeep
 !output/self-improving-runner/candidate-summaries/
+output/self-improving-runner/candidate-summaries/*
 !output/self-improving-runner/candidate-summaries/.gitkeep

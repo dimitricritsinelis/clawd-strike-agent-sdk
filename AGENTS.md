@@ -1,130 +1,19 @@
 # Clawd Strike Agent SDK Instructions
 
-## Mission
+Use the game's public `/skills.md` and the README quickstart. Normal startup requires no multi-document reading chain. Run `pnpm agent:run` with an explicitly configured `BASE_URL` pointing to the approved deployment or an isolated server you own. Do not start, stop, or assume ownership of an existing developer server.
 
-Use only the public Clawd Strike contract to enter Agent Mode, play repeated attempts, save results to disk, improve between attempts, and retry until a stop condition fires.
+The surrounding agent supplies reasoning and policy edits. Keep the SDK loop small: observe public state, choose an action, apply it at approximately 8 Hz in elapsed real time, record completed death, release inputs, retry, and reset episode-local memory. Do not call `advanceTime()` in the normal loop or add embedded LLM calls, API-key requirements, or orchestration frameworks.
 
-## Do this first
+Edit the baseline in `src/policies/visible-target.mjs`. Use visible target offsets, screenshots, and other documented public observations. Required `perception.visibleTargets` and `perception.movementBlocked` must be validated; missing fields are a compatibility error. Hidden coordinates, occluded enemies, routes, seeds, debug truth, and validation internals remain prohibited.
 
-1. Read `README.md`.
-2. Read `docs/PUBLIC_CONTRACT.md`.
-3. Read `MEMORY.md`.
-4. Read `SELF_LEARNING.md`.
-5. Read `docs/OUTPUTS.md`.
-6. Read `docs/POLICY_SCHEMA.md`.
-7. Read `docs/TROUBLESHOOTING.md`.
-8. Run `pnpm contract:check`.
+Play a batch, inspect evidence, change one behavior, compare with the saved champion, retain or reject, and repeat within the user's budget. Compare equal completed batches, defaulting to five episodes per policy, under the same current game conditions. Promote only a strictly higher mean final score. Hits, kills, accuracy, and survival are diagnostics. Ties, incomplete evaluations, and invalid runs cannot promote. Do not claim every attempt improves.
 
-## Stable run order
+Preserve disk history and accepted policy source between sessions. Append episodes and create unique candidate summaries; never replace historical candidate evidence. Keep best-ever individual score separate from promotion metrics. Browser storage alone is insufficient. Do not use old recordings as evidence for the current game revision.
 
-1. `pnpm smoke:no-context`
-2. `pnpm agent:baseline`
-3. `pnpm agent:learn`
+Record observations separately from inferred causes. Optional `MEMORY.md` and `SELF_LEARNING.md` notes must cite actual episode or comparison evidence; stock phrases are not proven lessons.
 
-Do not skip the smoke command on a fresh setup.
+Respect attempt/time budgets without counting partial episodes as completed attempts. Report startup failure, contract mismatch, timeout, completed death, and interruption distinctly. Preserve valid completed results when stopping and explicitly release held inputs before changing execution state.
 
-If you need one command after install, use `pnpm agent:run`. It must execute the full sequence and fail if the benchmark target or required durable outputs are missing.
+Use `pnpm ci:check` for local verification. Use `pnpm smoke:no-context` for startup/death/retry, and verify the baseline gets at least one kill within five completed attempts against the configured game. Missing coordinated perception blocks integration verification; do not invent a passing result.
 
-## Phase order
-
-1. `bootstrap_hit`
-2. `bootstrap_kill`
-3. `stabilize_score`
-
-## Required behavior
-
-- save a run config before play starts
-- launch Agent Mode through the public flow only
-- run one baseline attempt before tuning
-- keep the live gameplay loop simple:
-  - observe
-  - choose
-  - apply
-  - continue until death
-- do learning between attempts, not every tick
-- persist learning on disk
-
-## Safe edit surface
-
-Safe by default:
-
-- `MEMORY.md`
-- `SELF_LEARNING.md`
-- `config/*.json`
-- `output/**`
-
-Allowed with caution:
-
-- `src/policies/**`
-
-Locked by default:
-
-- `src/runtime/**`
-- `skills.md`
-- `docs/PUBLIC_CONTRACT.md`
-- `sdk.contract.json`
-- `scripts/validate-sdk-contract.mjs`
-
-## Learning rules
-
-- change config and policy parameters first
-- compare candidates on batches, not single runs
-- promote only on evidence
-- use the phase-aware ladder:
-  1. in `bootstrap_hit`:
-     - hit-positive episodes
-     - total hits
-     - meaningful hit rate
-     - earlier first hit
-     - then weak score/survival tie-breaks
-  2. in `bootstrap_kill`:
-     - kill-positive episodes
-     - total kills
-     - then hit quality
-     - then weak score/survival tie-breaks
-  3. in `stabilize_score`:
-     - kills
-     - score
-     - hit quality
-     - then survival and stability
-- survival-only zero-contact batches do not count as progress
-- use `lookYawDelta`, `lookPitchDelta`, and `feedback.recentEvents` when available
-- update `MEMORY.md` often
-- curate `SELF_LEARNING.md` conservatively
-
-## Common failure modes
-
-- fresh browser profile resets local `best`
-- fresh filesystem destroys durable learning
-- case-only path drift passes locally on macOS and fails in CI
-- missing selectors or globals mean contract drift
-- missing output artifacts means the learning claim is invalid
-- repeated no-promotion zero-hit batches usually mean acquisition failure, not success
-
-## Escalation rule
-
-- config and memory first
-- if the first 5 completed attempts have zero hits, escalate to bounded acquisition changes in `src/policies/**`
-- do **not** respond to a zero-hit batch by only raising the attempt budget
-- runtime wrappers, public contract files, and fairness-boundary files stay locked unless a human explicitly asks for that level of change
-
-## Stop conditions
-
-Stop when any of these happens:
-
-- attempt budget reached
-- time budget reached
-- user stops the run
-- stagnation threshold hit
-- learning disabled
-- contract mismatch
-- fatal runtime error
-
-## Output contract
-
-A valid learning run must write:
-
-- `output/self-improving-runner/champion-policy.json`
-- `output/self-improving-runner/episodes.jsonl`
-- `output/self-improving-runner/latest-session-summary.json`
-- `output/self-improving-runner/candidate-summaries/*.json`
+Do not commit, push, deploy, or modify the game repository unless explicitly asked. Preserve unrelated changes. Runtime and contract changes require task authorization; a policy experiment alone does not authorize widening the public boundary.

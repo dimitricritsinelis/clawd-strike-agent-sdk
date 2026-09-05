@@ -1,38 +1,7 @@
-# SELF_LEARNING.md
+# Verified policy learning
 
-Curated durable lessons across runs. Keep this focused on heuristics that survived real batch comparison.
+No policy improvement is established by this checked-in document. Add a lesson only after a completed, valid comparison supports it, and cite the candidate summary that contains the evidence.
 
-<!-- SELF_LEARNING_GENERATED:BEGIN -->
-## Stable heuristics that work
-- None yet.
+Play a batch, inspect public evidence, change one behavior, compare against a freshly evaluated saved champion, retain or reject, and repeat within the user's budget. Default to five completed episodes per policy. Mean final score determines promotion; ties, incomplete batches, invalid runs, and unequal batch sizes cannot promote. Keep best-ever individual score and other combat metrics as separate diagnostics.
 
-## Recurring failure patterns
-- candidate tied champion in a zero-contact bootstrap_hit batch (1)
-
-## Experiments that failed
-- candidate tied champion in a zero-contact bootstrap_hit batch (1)
-
-## Experiments that improved performance
-- None yet.
-<!-- SELF_LEARNING_GENERATED:END -->
-
-## Promotion rules
-
-- Promote only on batch evidence.
-- In `bootstrap_hit`, prefer real hits over survival-only zero-contact behavior.
-- In `bootstrap_kill`, prefer real kills over hit-only survival gains.
-- In `stabilize_score`, use the kill -> score -> hit quality -> survival ladder.
-- If both candidate and champion are zero-hit and zero-kill, treat the batch as no promotion.
-
-## Stagnation protocol
-
-- If repeated batches fail to promote, widen mutation scale modestly.
-- Re-screen the bootstrap catalog before widening mutation too far.
-- Try a hall-of-fame parent before changing controller family.
-- Escalate from config edits to policy-code edits only after bounded config search stalls.
-
-## Escalation rule
-
-- Config and memory first.
-- `src/policies/**` second.
-- Runtime wrappers and contract files only with explicit human review.
+Record the observation, hypothesis, behavior changed, champion and candidate mean scores, and retained/rejected decision. Do not turn an inferred death cause into an observed fact or promise that every attempt will improve.

@@ -42,6 +42,7 @@ test("validateLearningOutputs checks required files and candidate summaries", as
   await writeJson(path.join(outputDir, "champion-policy.json"), { id: "seed" });
   await writeJson(path.join(outputDir, "episodes.jsonl"), { ok: true });
   await writeJson(path.join(outputDir, "latest-session-summary.json"), { ok: true });
+  await writeJson(path.join(outputDir, "scoreboard.json"), { bestEver: null });
   await writeJson(path.join(outputDir, "candidate-summaries", "candidate-001.json"), { ok: true });
 
   const result = await validateLearningOutputs(outputDir);

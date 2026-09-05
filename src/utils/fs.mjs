@@ -1,5 +1,6 @@
 import path from "node:path";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { access, mkdir, readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 
 export async function ensureDir(dirPath) {
@@ -18,8 +19,9 @@ export async function fileExists(filePath) {
 export async function readTextIfExists(filePath, fallback = null) {
   try {
     return await readFile(filePath, "utf8");
-  } catch {
-    return fallback;
+  } catch (error) {
+    if (error.code === "ENOENT") return fallback;
+    throw error;
   }
 }
 
@@ -27,11 +29,7 @@ export async function readJsonIfExists(filePath, fallback = null) {
   const text = await readTextIfExists(filePath, null);
   if (text === null) return fallback;
 
-  try {
-    return JSON.parse(text);
-  } catch {
-    return fallback;
-  }
+  return JSON.parse(text);
 }
 
 export async function writeText(filePath, text) {
@@ -47,7 +45,14 @@ export async function writeTextExclusive(filePath, text) {
 }
 
 export async function writeJson(filePath, payload) {
-  await writeText(filePath, JSON.stringify(payload, null, 2));
+  await ensureDir(path.dirname(filePath));
+  const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, `${JSON.stringify(payload, null, 2)}\n`, { flag: "wx" });
+    await rename(temporaryPath, filePath);
+  } finally {
+    await unlink(temporaryPath).catch((error) => { if (error.code !== "ENOENT") throw error; });
+  }
 }
 
 export async function writeJsonExclusive(filePath, payload) {

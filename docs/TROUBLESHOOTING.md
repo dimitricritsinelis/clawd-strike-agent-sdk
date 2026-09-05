@@ -1,207 +1,37 @@
-# TROUBLESHOOTING.md
+# Troubleshooting
 
-## Install failures
+## Setup and startup
 
-### One-command run
+Use Node 20+ and the repository's pnpm version. Install dependencies with `pnpm install`, then run `pnpm exec playwright install --with-deps chromium`. Set `BASE_URL` explicitly to the configured deployment or an isolated server you own. The SDK never assumes an existing developer server is yours.
 
-After install, you can use:
+Run `pnpm ci:check` for local checks and `pnpm smoke:no-context` for public startup, completed death, and retry. A local contract check does not establish live game compatibility. `node --test test/browser.integration.mjs` runs the shared adapter in headed and headless browsers against an isolated synthetic contract fixture; headed mode requires a display. Passing it demonstrates SDK mechanics, not real game performance.
 
-```bash
-pnpm agent:run
-```
+`HEADLESS=false pnpm smoke:no-context` shows the same adapter and controller used headlessly. If Chromium cannot launch, check the browser installation and host display requirements. Browser startup failure is distinct from a completed gameplay attempt.
 
-This runs `contract:check`, `smoke:no-context`, `agent:baseline`, and `agent:learn` in order, resets the managed output dirs first, and exits nonzero if the required learning artifacts are missing or the starter benchmark target is not met.
+## Compatibility error
 
-### `pnpm install` fails
+The game must expose API version `1`, `public-agent-v1`, documented state/action globals, and the coordinated `perception.visibleTargets` plus boolean `perception.movementBlocked`. A visible target has a string ID and finite yaw/pitch offsets. Missing perception is a contract mismatch, not a request to use blind aiming or private globals.
 
-- verify Node `20+`
-- verify `pnpm` is installed
-- retry with:
-  ```bash
-  pnpm install --no-frozen-lockfile
-  ```
+Compare the configured game's `/skills.md` with the SDK's required contract. The canonical file fetched on 2026-09-05 still lacks `perception`, `visibleTargets`, and `movementBlocked`; mirroring awaits the coordinated canonical update. If the game API is unavailable, report integration verification as blocked and preserve local verification results.
 
-### Playwright browser install fails
+## Timeout or budget stop
 
-Run:
+The default episode and smoke cap is approximately five minutes (`2400 × 125ms`). `TIME_BUDGET_MINUTES` can end a session sooner. Inspect the recorded stop reason before changing limits. A timeout is not death; a partial attempt does not count as completed and cannot promote a candidate. Valid earlier results remain on disk.
 
-```bash
-pnpm exec playwright install --with-deps chromium
-```
+The game advances itself. Do not call `advanceTime()` to accelerate runs or work around a stalled hidden tab. The SDK releases held movement/buttons before stopping or retrying. A retry that never becomes ready is a startup/retry failure.
 
-If your host cannot install system dependencies, try a local Chromium install and rerun.
+## No kills
 
-## Repo drift and path issues
+Inspect `episodes.jsonl` and candidate summaries after five completed baseline attempts. Check visible-target acquisition, aim offsets/fire alignment, ammo/reload behavior, and blocked-movement recovery in the bounded near-death history. Form a hypothesis and change one policy behavior before spending a larger budget. Do not report survival-only behavior as successful combat learning.
 
-### `pnpm contract:check` passes locally but CI fails on files
+## Saved learning and rejected edits
 
-Case-only filename mismatches can appear to work on macOS and still fail in Linux CI.
+Reuse the same `OUTPUT_DIR`. `champion-policy.json` preserves accepted source; `episodes.jsonl` appends results; unique candidate summaries preserve historical comparisons. Browser storage and `USER_DATA_DIR` are not the durable policy or best-score record. Do not delete learning output to repair startup.
 
-Check:
+The `.run.lock` file prevents concurrent writers to an output directory. After a crash, verify that its recorded process has stopped before removing only that lock. Preserve episode and policy files.
 
-- `docs/TROUBLESHOOTING.md` exists with that exact case
-- `docs/troubleshooting.md` does not exist
-- banned shadow files such as `README 2.md`, `package 2.json`, and `skills 2.md` are absent
+A rejected edit does not replace the saved champion. Inspect the latest candidate summary for champion/candidate scores, validity, and decision evidence. Ties, unequal batches, incomplete evaluations, and invalid runs cannot promote. A session with too little budget for both batches preserves results but cannot establish improvement.
 
-Then rerun:
+## Local contract check failures
 
-```bash
-pnpm contract:check
-```
-
-## Browser launch issues
-
-### Headless launch fails
-
-Try:
-
-```bash
-HEADLESS=false pnpm smoke:no-context
-```
-
-### Persistent profile problems
-
-If local `best` keeps resetting, make sure `USER_DATA_DIR` stays stable across runs.
-
-Default:
-
-- `.agent-profile/`
-
-Do not use a fresh temporary browser context if you want browser-session persistence.
-
-## Missing selectors or globals
-
-### Public selectors changed
-
-Run:
-
-```bash
-pnpm contract:check
-```
-
-Then compare the live surface with:
-
-- `skills.md`
-- `docs/PUBLIC_CONTRACT.md`
-- `src/runtime/contract.mjs`
-
-Do not guess private selectors.
-
-### `agent_observe` and `render_game_to_text` are both missing
-
-Treat this as a hard contract mismatch. Stop and report it.
-
-### `agent_apply_action` is missing
-
-Treat this as a hard contract mismatch. Stop and report it.
-
-## Failed game start
-
-If autostart fails, the starter already falls back to the documented UI flow.
-
-Manual recovery:
-
-1. open the canonical host
-2. click `Agent`
-3. click `Enter agent mode`
-4. enter a valid name
-5. press `Enter`
-
-## Missing outputs
-
-### `agent:learn` completes but required artifacts are missing
-
-Check:
-
-- `output/self-improving-runner/champion-policy.json`
-- `output/self-improving-runner/episodes.jsonl`
-- `output/self-improving-runner/latest-session-summary.json`
-- `output/self-improving-runner/candidate-summaries/`
-
-If any are missing, treat the learning run as invalid.
-
-### `pnpm agent:run` fails after `agent:learn`
-
-Inspect:
-
-- `output/self-improving-runner/latest-session-summary.json`
-- `output/self-improving-runner/champion-policy.json`
-- `output/self-improving-runner/candidate-summaries/*.json`
-
-Common causes:
-
-- required learning artifacts are missing
-- the run stayed hitless in the first 5 completed attempts
-- the run got hits but never secured 1 kill within the first 5 completed attempts
-
-### Local memory docs did not update
-
-Check:
-
-- `SAVE_MEMORY_DOCS=true`
-- `MEMORY.md` and `SELF_LEARNING.md` are writable
-- the workspace is not read-only
-
-Memory-doc failures are supportive warnings. Required-output failures are fatal.
-
-## The agent never gets a kill
-
-Use this order.
-
-1. Inspect whether the agent got **any hits** in the first 5 completed attempts.
-2. If there were zero hits:
-   - do **not** just raise `ATTEMPT_BUDGET`
-   - inspect the bootstrap catalog results before mutating blindly
-   - move to policy-level acquisition fixes in `src/policies/**`
-   - verify low / mid / high pitch-band scanning is active
-   - verify probe bursts and cooldowns are reducing spam
-   - verify damage-driven micro-scan is visible in telemetry
-   - verify `feedback.recentEvents` is consumed when present
-3. If there were hits but zero kills:
-   - extend engage hold
-   - inspect engage burst length / cooldown
-   - slow movement while firing
-   - inspect reload timing and damage reacquisition timing
-4. Only after that should you widen budgets or exploration scale.
-
-Inspect these artifacts before editing code:
-
-- `output/self-improving-runner/episodes.jsonl`
-- `output/self-improving-runner/candidate-summaries/*.json`
-- `output/self-improving-runner/latest-session-summary.json`
-
-Useful telemetry to inspect first:
-
-- `timeToFirstHitS`
-- `timeToFirstKillS`
-- `controllerTelemetry.pitchBandVisits`
-- `controllerTelemetry.modeTicks`
-- `controllerTelemetry.recentEventCounts`
-- `controllerTelemetry.damageReactionCount`
-- `controllerTelemetry.noContactRecoveryCount`
-
-Treat `timeToFirst*` as diagnostic only until it is calibrated against `survivalTimeS`. If those values exceed survival time, do not use them for promotion decisions.
-
-## Evaluation hangs
-
-Increase:
-
-- `MAX_STEPS_PER_EPISODE`
-
-And inspect manually with:
-
-```bash
-HEADLESS=false pnpm agent:learn
-```
-
-## Console errors appear
-
-The starter treats page and console errors as real failures because contract drift can make the learning signal meaningless.
-
-Inspect:
-
-- console output
-- screenshots
-- `skills.md`
-- `docs/PUBLIC_CONTRACT.md`
-- recent changes to the public runtime surface
+Check exact filename case, especially `docs/TROUBLESHOOTING.md`, and remove only confirmed accidental shadow files. `AGENTS.md` and `CLAUDE.md` must stay consistent. Do not weaken the contract checker or validation to make a failing run appear successful.

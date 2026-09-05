@@ -1,165 +1,28 @@
-# OUTPUTS.md
+# Saved outputs
 
-This file defines the artifact contract for smoke, baseline, and learning runs.
+Normal runs preserve the output directory. Keep it between sessions; browser-session `score.best` is not the durable record.
 
-## Required learning artifacts
+## Durable artifacts
 
-`pnpm agent:learn` must write:
+- `output/self-improving-runner/champion-policy.json`: accepted identity and recoverable policy source. This is the policy resumed in later sessions.
+- `output/self-improving-runner/episodes.jsonl`: appended episode results with score, kills, hits, shots, accuracy, survival, public death cause when available, and policy identity. Only valid completed deaths support evaluation.
+- `output/self-improving-runner/latest-session-summary.json`: current session outcome, stop reason, completed count, comparison decision, evidence, and saved locations.
+- `output/self-improving-runner/candidate-summaries/*.json`: unique evaluation records, including champion/candidate source snapshots, batch scores, settings, and retained/rejected decision. Existing evidence is never overwritten.
+- `output/self-improving-runner/scoreboard.json`: best-ever individual score, separate from mean-score promotion.
+- `output/self-improving-runner/resolved-run-config.json`: latest configuration, saved before play.
 
-- `output/self-improving-runner/champion-policy.json`
-- `output/self-improving-runner/episodes.jsonl`
-- `output/self-improving-runner/latest-session-summary.json`
-- `output/self-improving-runner/candidate-summaries/*.json`
+Candidate summaries preserve the context needed to interpret historical results, including configured base URL, public profile/tuning identity when available, policy identity, and execution settings. Missing public identity remains unknown. Results from another deployment or revision do not establish current performance.
 
-If those paths are missing, the run is not durable self-improvement.
+A baseline summary is initial gameplay evidence, not a promotion. A comparison requires equal-sized completed valid batches, default five each. Champion and candidate means and the strict score-based decision must be reported. Incomplete evaluations and ties cannot replace the accepted policy.
 
-## Supporting artifacts
+## Near-death evidence
 
-The learner also tries to write:
+Episode records include `observationActionTail`, the last 40 public observation/action frames, with at most 16 visible targets and 12 feedback events per frame. Inspect target offsets, alignment/fire actions, ammo/reload state, movement, and blocked recovery near death. The history is bounded; it is not a full replay.
 
-- `output/self-improving-runner/semantic-memory.json`
-- `output/self-improving-runner/hall-of-fame.json`
-- `output/self-improving-runner/scoreboard.json`
-- `output/self-improving-runner/resolved-run-config.json`
-- `MEMORY.md`
-- `SELF_LEARNING.md`
+Public death cause, when present, is an observation. A suspected acquisition, aiming, reload, or movement failure is an inference. Keep those distinct when writing optional `MEMORY.md` and `SELF_LEARNING.md` notes; do not generate stock “lessons” as proof.
 
-Supporting-artifact failures should be surfaced as warnings in `latest-session-summary.json` and stderr/console output. Required-artifact failures should fail the command.
+## Other commands
 
-## Candidate summary ids
+`pnpm smoke:no-context` writes a timestamped `output/no-context-smoke/` folder containing its summary, console evidence, and available screenshots of startup, death, and retry. `pnpm agent:baseline` writes under `output/baseline/`. Normal gameplay/evaluation history lives under `output/self-improving-runner/` unless `OUTPUT_DIR` is explicitly configured.
 
-Candidate summary filenames are session-scoped and collision-safe:
-
-- `learn-20260325t194500123z-ab12cd34-0000.json`
-- `learn-20260325t194500123z-ab12cd34-0001.json`
-- `learn-20260325t201101456z-ef56gh78-0000.json`
-
-The id allocator scans durable on-disk state and writes summaries with exclusive create semantics, so repeated sessions append evidence instead of silently overwriting older runs.
-
-## Smoke outputs
-
-`pnpm smoke:no-context` writes a timestamped folder under `output/no-context-smoke/` with:
-
-- `summary.json`
-- `console.json`
-- screenshots for runtime start, death, and respawn when available
-
-## Baseline outputs
-
-`pnpm agent:baseline` writes under `output/baseline/`:
-
-- `latest-session-summary.json`
-- `latest-episode.json`
-- `resolved-run-config.json`
-
-## Candidate summary shape
-
-Each candidate summary includes:
-
-- candidate id, label, and parent id
-- candidate metadata such as bootstrap archetype or mutation origin
-- policy snapshot
-- aggregate metrics
-- champion aggregate at evaluation start
-- `evaluationKind`
-- `learningPhase`
-- `targetMode`
-- `acquisitionMet`
-- `baselineMet`
-- promote / reject decision
-- generation timestamp
-
-Seed or champion backfill summaries may use a non-comparison `evaluationKind`, but they still reserve the durable candidate id and record the policy state honestly.
-
-## Champion policy shape
-
-`champion-policy.json` includes:
-
-- policy id
-- label
-- parent id when present
-- promoted timestamp
-- policy payload
-- aggregate metrics for the batch that justified promotion
-
-## Session summary shape
-
-`latest-session-summary.json` includes:
-
-- start time
-- finish time
-- stop reason
-- resolved run config metadata
-- `acquisitionTarget`
-- `firstKillTarget`
-- `baselineMilestone`
-- `learningPhase`
-- `phaseHistory`
-- `targetMode`
-- `acquisitionMet`
-- `baselineMet`
-- bootstrap catalog rounds and confirmation results
-- promotions
-- rejections
-- final champion
-- warnings for supportive-output failures
-- key lessons learned
-- next recommended experiments
-
-## Episodes log shape
-
-Each line in `episodes.jsonl` represents one completed death-to-death attempt and includes:
-
-- candidate id
-- candidate label
-- recorded time
-- episode index
-- `learningPhase`
-- final score
-- best score
-- survival time
-- kills
-- headshots
-- shots fired
-- shots hit
-- accuracy
-- `hitPositive`
-- `killPositive`
-- `timeToFirstDamageS`
-- `timeToFirstHitS`
-- `timeToFirstKillS`
-- death cause
-- last run score
-- `controllerTelemetry`
-
-## Controller telemetry fields
-
-When present, `controllerTelemetry` includes deterministic public-safe acquisition telemetry:
-
-- `learningPhase`
-- `feedbackAvailable`
-- `recentEventCounts`
-- `enemyHitEventsObserved`
-- `killEventsObserved`
-- `damageEventsObserved`
-- `damageReactionCount`
-- `noContactRecoveryCount`
-- `modeTicks`
-- `modeShots`
-- `ticksInEngageMode`
-- `ticksInPanicMode`
-- `burstCount`
-- `avgBurstLength`
-- `pitchBandVisits`
-- `pitchAbsTravel`
-- `yawAbsTravel`
-- `scanDirectionFlips`
-- `shotsWithinWindowAfterDamage`
-- `shotsWithinWindowAfterHit`
-- `timeToFirstDamageS`
-- `timeToFirstHitS`
-- `timeToFirstKillS`
-- `estimatedPitchRangeDeg`
-- `lastMode`
-
-Timing fields such as `timeToFirstDamageS`, `timeToFirstHitS`, and `timeToFirstKillS` must be dropped when they exceed `survivalTimeS`.
+Timeout, budget, interruption, startup failure, and contract mismatch must preserve earlier completed results. A partial episode cannot increase the completed-attempt count or support promotion. Do not delete output to repair a failing command; inspect the recorded reason first.

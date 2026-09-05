@@ -1,69 +1,12 @@
-# Clawd Strike learning playbook
+# Gameplay improvement playbook
 
-Optional background doc. This is not part of the required reading order.
+Optional reference; the README is sufficient for startup.
 
-## Objective
+1. Set `BASE_URL` to the configured deployment or an isolated server you own, then run `pnpm agent:run`.
+2. Inspect the completed batch. A useful baseline must get at least one kill within five completed attempts. If it does not, inspect public target acquisition and near-death evidence before increasing the budget.
+3. Write a hypothesis separate from the observations. Change one behavior in `src/policies/visible-target.mjs`.
+4. Run again to compare the edited candidate with the saved champion, freshly evaluated under current conditions. Use equal completed batches, default five each.
+5. Retain only a strictly higher mean final score. Reject ties, invalid results, and incomplete comparisons. Preserve both policies and all historical evidence.
+6. Repeat within the user's attempt/time budget. In a later session, reuse the same output directory to resume accepted learning.
 
-Make a contextless agent:
-
-1. enter Agent Mode
-2. play repeated runs
-3. keep memory
-4. improve
-5. repeat without widening the public contract
-
-## Minimal architecture
-
-Use four layers:
-
-1. public contract adapter
-2. bounded controller family
-3. durable memory artifacts
-4. batch optimizer
-
-## Stage order
-
-1. `bootstrap_hit`
-2. `bootstrap_kill`
-3. `stabilize_score`
-
-## Promotion stance
-
-Promote only on batch evidence.
-
-If the champion has zero hits and zero kills:
-
-- prioritize hit-positive episodes
-- then total hits
-- then meaningful hit rate
-- then earlier first hit
-- then weak score and survival tie-breaks
-
-If the champion has hits but zero kills:
-
-- prioritize kill-positive episodes
-- then total kills
-- then hit consistency
-- then score and survival
-
-Once the first-kill baseline is met:
-
-- optimize kills
-- optimize score
-- optimize survival
-- optimize accuracy with comparable shot volume
-
-## Persistence surfaces
-
-Durable learning requires:
-
-- a persistent browser profile for browser-session `best`
-- a persistent workspace for `episodes.jsonl`, `champion-policy.json`, summaries, and semantic notes
-
-## Anti-patterns
-
-- raising the attempt budget after a completely hitless batch and calling that learning
-- promoting a survival-only zero-hit candidate
-- mutating around a single seed forever instead of screening a small bootstrap catalog
-- full controller rewrites every attempt
-- treating hidden truth as fair game
+The SDK runs browser actions and evaluates results. The surrounding agent does the reasoning and code edits between runs. No embedded model or second learning framework is needed. Gameplay success is distinct from demonstrated policy improvement, and no individual attempt is guaranteed to improve.

@@ -6,7 +6,6 @@ import {
   LEARNING_PHASES,
   aggregateHasHitEvidence,
   aggregateHasKillEvidence,
-  aggregateIsZeroContact,
   deriveLearningPhase,
   normalizeLearningPhase,
   summarizeBaselineStatus
@@ -143,13 +142,9 @@ function minDefined(values) {
   return defined.length === 0 ? null : Math.min(...defined);
 }
 
-function formatPhaseReason(phase, key, direction) {
-  return `candidate ${direction} ${key} during ${phase}`;
-}
-
 function makeDecision({ promote, phase, key, candidateValue, championValue, reason }) {
-  const candidateNumber = Number(candidateValue);
-  const championNumber = Number(championValue);
+  const candidateNumber = candidateValue;
+  const championNumber = championValue;
   const delta = Number.isFinite(candidateNumber) && Number.isFinite(championNumber)
     ? candidateNumber - championNumber
     : null;
@@ -175,268 +170,6 @@ function noPromotion(phase, reason, key = "tie") {
     championValue: null,
     reason
   });
-}
-
-function compareHigherIsBetter(candidate, champion, phase, key, minDelta = 0) {
-  const candidateValue = Number(candidate?.[key] ?? 0);
-  const championValue = Number(champion?.[key] ?? 0);
-
-  if (candidateValue > championValue + minDelta) {
-    return makeDecision({
-      promote: true,
-      phase,
-      key,
-      candidateValue,
-      championValue,
-      reason: formatPhaseReason(phase, key, "improved")
-    });
-  }
-
-  if (championValue > candidateValue + minDelta) {
-    return makeDecision({
-      promote: false,
-      phase,
-      key,
-      candidateValue,
-      championValue,
-      reason: formatPhaseReason(phase, key, "regressed")
-    });
-  }
-
-  return null;
-}
-
-function compareLowerIsBetter(candidate, champion, phase, key, minDelta = 0.1) {
-  const candidateValue = finiteNonNegative(candidate?.[key]);
-  const championValue = finiteNonNegative(champion?.[key]);
-
-  if (candidateValue === null || championValue === null) {
-    return null;
-  }
-
-  if (candidateValue + minDelta < championValue) {
-    return makeDecision({
-      promote: true,
-      phase,
-      key,
-      candidateValue,
-      championValue,
-      reason: formatPhaseReason(phase, key, "reached-earlier")
-    });
-  }
-
-  if (championValue + minDelta < candidateValue) {
-    return makeDecision({
-      promote: false,
-      phase,
-      key,
-      candidateValue,
-      championValue,
-      reason: formatPhaseReason(phase, key, "reached-later")
-    });
-  }
-
-  return null;
-}
-
-function compareRate(candidate, champion, phase, key, options = {}) {
-  const threshold = Number(options.threshold ?? 0.02);
-  const volumeKey = options.volumeKey ?? "totalShotsFired";
-  const floor = Math.max(5, Math.round(Number(options.floor ?? 20)));
-  const candidateRate = Number(candidate?.[key] ?? 0);
-  const championRate = Number(champion?.[key] ?? 0);
-  const candidateVolume = Number(candidate?.[volumeKey] ?? 0);
-  const championVolume = Number(champion?.[volumeKey] ?? 0);
-  const candidateComparableFloor = Math.max(floor, Math.round(championVolume * 0.7));
-  const championComparableFloor = Math.max(floor, Math.round(candidateVolume * 0.7));
-
-  if (candidateRate > championRate + threshold && candidateVolume >= candidateComparableFloor) {
-    return makeDecision({
-      promote: true,
-      phase,
-      key,
-      candidateValue: candidateRate,
-      championValue: championRate,
-      reason: formatPhaseReason(phase, key, "improved")
-    });
-  }
-
-  if (championRate > candidateRate + threshold && championVolume >= championComparableFloor) {
-    return makeDecision({
-      promote: false,
-      phase,
-      key,
-      candidateValue: candidateRate,
-      championValue: championRate,
-      reason: formatPhaseReason(phase, key, "regressed")
-    });
-  }
-
-  return null;
-}
-
-function compareBootstrapHit(candidate, champion, phase) {
-  const candidateHitPositive = aggregateHasHitEvidence(candidate);
-  const championHitPositive = aggregateHasHitEvidence(champion);
-
-  if (!candidateHitPositive && !championHitPositive && aggregateIsZeroContact(candidate) && aggregateIsZeroContact(champion)) {
-    return noPromotion(
-      phase,
-      "candidate tied champion in a zero-contact bootstrap_hit batch",
-      "zero_contact_tie"
-    );
-  }
-
-  if (candidateHitPositive && !championHitPositive) {
-    return makeDecision({
-      promote: true,
-      phase,
-      key: "episodesWithHit",
-      candidateValue: candidate.episodesWithHit,
-      championValue: champion.episodesWithHit,
-      reason: "candidate introduced hit-positive evidence during bootstrap_hit"
-    });
-  }
-
-  if (championHitPositive && !candidateHitPositive) {
-    return makeDecision({
-      promote: false,
-      phase,
-      key: "episodesWithHit",
-      candidateValue: candidate.episodesWithHit,
-      championValue: champion.episodesWithHit,
-      reason: "candidate lost hit-positive evidence during bootstrap_hit"
-    });
-  }
-
-  for (const [key, minDelta] of [
-    ["episodesWithHit", 0],
-    ["totalShotsHit", 0]
-  ]) {
-    const decision = compareHigherIsBetter(candidate, champion, phase, key, minDelta);
-    if (decision) return decision;
-  }
-
-  for (const key of ["hitRate", "meanAccuracy"]) {
-    const decision = compareRate(candidate, champion, phase, key, { threshold: 0.02 });
-    if (decision) return decision;
-  }
-
-  for (const [key, minDelta] of [
-    ["bestScore", 0],
-    ["meanSurvivalTimeS", 0.25]
-  ]) {
-    const decision = compareHigherIsBetter(candidate, champion, phase, key, minDelta);
-    if (decision) return decision;
-  }
-
-  return noPromotion(phase, "candidate did not beat champion during bootstrap_hit");
-}
-
-function compareBootstrapKill(candidate, champion, phase) {
-  const candidateKillPositive = aggregateHasKillEvidence(candidate);
-  const championKillPositive = aggregateHasKillEvidence(champion);
-
-  if (candidateKillPositive && !championKillPositive) {
-    return makeDecision({
-      promote: true,
-      phase,
-      key: "episodesWithKill",
-      candidateValue: candidate.episodesWithKill,
-      championValue: champion.episodesWithKill,
-      reason: "candidate introduced kill-positive evidence during bootstrap_kill"
-    });
-  }
-
-  if (championKillPositive && !candidateKillPositive) {
-    return makeDecision({
-      promote: false,
-      phase,
-      key: "episodesWithKill",
-      candidateValue: candidate.episodesWithKill,
-      championValue: champion.episodesWithKill,
-      reason: "candidate lost kill-positive evidence during bootstrap_kill"
-    });
-  }
-
-  if (!candidateKillPositive && !championKillPositive) {
-    for (const [key, minDelta] of [
-      ["episodesWithHit", 0],
-      ["totalShotsHit", 0]
-    ]) {
-      const decision = compareHigherIsBetter(candidate, champion, phase, key, minDelta);
-      if (decision) return decision;
-    }
-
-    const hitRateDecision = compareRate(candidate, champion, phase, "hitRate", { threshold: 0.02 });
-    if (hitRateDecision) return hitRateDecision;
-
-    const scoreDecision = compareHigherIsBetter(candidate, champion, phase, "bestScore", 0);
-    if (scoreDecision) return scoreDecision;
-
-    return noPromotion(
-      phase,
-      "candidate did not beat champion on contact metrics during bootstrap_kill"
-    );
-  }
-
-  for (const [key, minDelta] of [
-    ["episodesWithKill", 0],
-    ["totalKills", 0],
-    ["bestScore", 0],
-    ["medianScore", 0],
-    ["totalShotsHit", 0]
-  ]) {
-    const decision = compareHigherIsBetter(candidate, champion, phase, key, minDelta);
-    if (decision) return decision;
-  }
-
-  for (const key of ["hitRate", "meanAccuracy"]) {
-    const decision = compareRate(candidate, champion, phase, key, { threshold: 0.02 });
-    if (decision) return decision;
-  }
-
-  for (const [key, minDelta] of [
-    ["meanSurvivalTimeS", 0.25]
-  ]) {
-    const decision = compareHigherIsBetter(candidate, champion, phase, key, minDelta);
-    if (decision) return decision;
-  }
-
-  for (const key of ["scoreStdDev", "survivalStdDev"]) {
-    const decision = compareLowerIsBetter(candidate, champion, phase, key, 0.1);
-    if (decision) return decision;
-  }
-
-  return noPromotion(phase, "candidate did not beat champion during bootstrap_kill");
-}
-
-function compareStabilizeScore(candidate, champion, phase) {
-  for (const [key, minDelta] of [
-    ["episodesWithKill", 0],
-    ["totalKills", 0],
-    ["bestScore", 0],
-    ["medianScore", 0],
-    ["totalShotsHit", 0]
-  ]) {
-    const decision = compareHigherIsBetter(candidate, champion, phase, key, minDelta);
-    if (decision) return decision;
-  }
-
-  for (const key of ["hitRate", "meanAccuracy"]) {
-    const decision = compareRate(candidate, champion, phase, key, { threshold: 0.02 });
-    if (decision) return decision;
-  }
-
-  const survivalDecision = compareHigherIsBetter(candidate, champion, phase, "meanSurvivalTimeS", 0.25);
-  if (survivalDecision) return survivalDecision;
-
-  for (const key of ["scoreStdDev", "survivalStdDev"]) {
-    const decision = compareLowerIsBetter(candidate, champion, phase, key, 0.1);
-    if (decision) return decision;
-  }
-
-  return noPromotion(phase, "candidate did not beat champion during stabilize_score");
 }
 
 function jitterNumber(current, magnitude, rng, min, max, integer = false) {
@@ -487,10 +220,21 @@ export function createCandidatePolicyRecord(options = {}) {
 }
 
 export function aggregateEpisodes(episodes) {
-  const safeEpisodes = Array.isArray(episodes)
-    ? episodes.map((episode) => sanitizeEpisodeTimings(episode))
-    : [];
-  const totalEpisodes = safeEpisodes.length;
+  const records = Array.isArray(episodes) ? episodes : [];
+  const isCompleted = (episode) => episode?.completed === true
+    && (episode.status === undefined || episode.status === "completed");
+  const isValid = (episode) => episode?.valid !== false
+    && Number.isFinite(episode?.finalScore)
+    && ["kills", "shotsHit", "shotsFired", "survivalTimeS"].every((key) => (
+      Number.isFinite(episode?.[key]) && episode[key] >= 0
+    ));
+  const invalidEpisodes = records.filter((episode) => !isValid(episode)).length;
+  const incompleteEpisodes = records.filter((episode) => !isCompleted(episode)).length;
+  const safeEpisodes = records
+    .filter((episode) => isCompleted(episode) && isValid(episode))
+    .map((episode) => sanitizeEpisodeTimings(episode));
+  const totalEpisodes = records.length;
+  const completedEpisodes = safeEpisodes.length;
   const totalKills = safeEpisodes.reduce((sum, episode) => sum + Number(episode.kills ?? 0), 0);
   const episodesWithKill = safeEpisodes.filter((episode) => Number(episode.kills ?? 0) > 0).length;
   const episodesWithHit = safeEpisodes.filter((episode) => Number(episode.shotsHit ?? 0) > 0).length;
@@ -556,12 +300,15 @@ export function aggregateEpisodes(episodes) {
 
   const aggregate = {
     totalEpisodes,
+    completedEpisodes,
+    incompleteEpisodes,
+    invalidEpisodes,
     totalKills,
     totalHits: shotsHit,
     episodesWithKill,
-    episodesWithoutKill: totalEpisodes - episodesWithKill,
+    episodesWithoutKill: completedEpisodes - episodesWithKill,
     episodesWithHit,
-    episodesWithoutHit: totalEpisodes - episodesWithHit,
+    episodesWithoutHit: completedEpisodes - episodesWithHit,
     firstHitEpisode,
     firstKillEpisode,
     bestScore: scores.length === 0 ? 0 : scores[scores.length - 1],
@@ -634,15 +381,38 @@ export function compareBatchMetrics(candidate, champion, options = {}) {
     options.learningPhase ?? options.targetMode ?? deriveLearningPhase(champion)
   );
 
-  if (phase === LEARNING_PHASES.BOOTSTRAP_HIT) {
-    return compareBootstrapHit(candidate, champion, phase);
+  const expectedEpisodes = options.expectedEpisodes ?? 5;
+  if (!Number.isInteger(expectedEpisodes) || expectedEpisodes < 1) {
+    throw new Error("expectedEpisodes must be a positive integer");
   }
 
-  if (phase === LEARNING_PHASES.BOOTSTRAP_KILL) {
-    return compareBootstrapKill(candidate, champion, phase);
+  for (const [label, batch] of [["candidate", candidate], ["champion", champion]]) {
+    if (batch?.invalidEpisodes !== 0 || !Number.isFinite(batch?.meanScore)) {
+      return noPromotion(phase, `${label} batch contains invalid or unvalidated results`, "invalid_batch");
+    }
+    if (batch.totalEpisodes !== expectedEpisodes
+      || batch.completedEpisodes !== expectedEpisodes
+      || batch.incompleteEpisodes !== 0) {
+      return noPromotion(
+        phase,
+        `${label} batch requires exactly ${expectedEpisodes} completed episodes`,
+        "incomplete_batch"
+      );
+    }
   }
 
-  return compareStabilizeScore(candidate, champion, phase);
+  return makeDecision({
+    promote: candidate.meanScore > champion.meanScore,
+    phase,
+    key: "meanScore",
+    candidateValue: candidate.meanScore,
+    championValue: champion.meanScore,
+    reason: candidate.meanScore > champion.meanScore
+      ? "candidate improved mean final score over equal completed batches"
+      : candidate.meanScore === champion.meanScore
+        ? "candidate tied champion mean final score; champion retained"
+        : "candidate regressed mean final score; champion retained"
+  });
 }
 
 export const compareAggregates = compareBatchMetrics;
@@ -822,7 +592,7 @@ export function deriveSemanticNotes(previousPolicy, nextPolicy, previousAggregat
   }
 
   if (Number(nextPolicy.microScanTicks) > Number(previousPolicy.microScanTicks)) {
-    push("Longer damage micro-scans helped reacquire contact.");
+    push("Longer damage micro-scans were part of the promoted candidate; their causal effect is unproven.");
   }
 
   if (Number(nextPolicy.engageBurstLengthTicks) > Number(previousPolicy.engageBurstLengthTicks)) {
@@ -838,7 +608,7 @@ export function deriveSemanticNotes(previousPolicy, nextPolicy, previousAggregat
   }
 
   if (Number(nextPolicy.damageForwardScale) < Number(previousPolicy.damageForwardScale)) {
-    push("Reducing forward drift after damage helped reacquisition.");
+    push("Reduced forward drift after damage was part of the promoted candidate; its causal effect is unproven.");
   }
 
   return notes;
